@@ -520,7 +520,7 @@ impl Engine {
     ) -> Result<(PluginEntry, PluginInstance<MxmHost>, Arc<PlayerHostState>), String> {
         // SAFETY: loading a CLAP bundle runs its code. That is inherent to hosting; the browser
         // decides which bundles are offered, and fixtures are only ever loaded by path.
-        let entry = unsafe { PluginEntry::load(bundle) }.map_err(|e| e.to_string())?;
+        let entry = unsafe { crate::entry::load(bundle) }.map_err(|e| e.to_string())?;
         let factory = entry
             .get_plugin_factory()
             .ok_or_else(|| "the bundle exposes no plugin factory".to_owned())?;

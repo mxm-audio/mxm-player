@@ -66,6 +66,13 @@ walkdir    = "=2.5.0"
 # no MPL-2.0 code is in its graph under any build grouping. `crates/mxm-audio-file/AGENTS.md`.
 mxm-audio-file = { workspace = true }
 
+# Linux only: a plugin's library is opened with RTLD_NODELETE (`src/entry.rs`), so it is never
+# unmapped under a thread that still holds its destructors. Both at the versions the tree already
+# resolves: libloading is clack-host's, libc everyone's.
+[target.'cfg(target_os = "linux")'.dependencies]
+libloading = "=0.8.9"
+libc = "=0.2.189"
+
 [dev-dependencies]
 # The harnesses these tests drive the player with, shared with every plugin's host tests.
 mxm-player-harness.workspace = true

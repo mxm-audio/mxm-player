@@ -2322,6 +2322,8 @@ dependencies = [
  "egui",
  "egui_kittest",
  "kittest",
+ "libc",
+ "libloading 0.8.9",
  "midir",
  "mxm-audio-file",
  "mxm-audio-file-decode",

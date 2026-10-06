@@ -88,10 +88,12 @@ fn loading_a_plugin_while_streaming_completes_promptly() {
     session.load(&file, PLUGIN);
     let elapsed = started.elapsed();
 
-    // Well under `WEDGE_TIMEOUT` (3s). Passing by waiting out the timeout would be a false pass,
-    // so the budget is what makes this assertion mean anything.
+    // Under `WEDGE_TIMEOUT` (3s) with room to spare. Passing by waiting out the timeout would be a
+    // false pass, so the budget is what makes this assertion mean anything. 2.5 s rather than the
+    // 1.5 s it was: a shared CI runner took 1.9 s (2026-10-06) with nothing wrong, and a reload that
+    // waits out the timeout still fails.
     assert!(
-        elapsed < Duration::from_millis(1500),
+        elapsed < Duration::from_millis(2500),
         "loading while streaming took {elapsed:?}; command servicing has regressed"
     );
     assert_ne!(

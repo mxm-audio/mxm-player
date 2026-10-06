@@ -246,7 +246,7 @@ fn render_inner(
     // hosting; the caller decides which bundles are trustworthy. Fixtures are loaded by path,
     // never through the scanner.
     let entry =
-        unsafe { PluginEntry::load(bundle) }.map_err(|e| RenderError::Load(e.to_string()))?;
+        unsafe { crate::entry::load(bundle) }.map_err(|e| RenderError::Load(e.to_string()))?;
     let mut instance = instantiate(&entry, plugin_id)?;
 
     if let Some(bytes) = config.state.as_deref() {
@@ -473,7 +473,7 @@ fn run_effect(
     block_size: u32,
 ) -> Result<Vec<Vec<f32>>, RenderError> {
     // SAFETY: as in `render` — loading a bundle runs its code, and the caller chose the bundle.
-    let entry = unsafe { PluginEntry::load(&effect.bundle) }
+    let entry = unsafe { crate::entry::load(&effect.bundle) }
         .map_err(|e| RenderError::Load(e.to_string()))?;
     let mut instance = instantiate(&entry, &effect.plugin_id)?;
     if let Some(bytes) = effect.state.as_deref() {
@@ -719,7 +719,7 @@ fn push_event(buffer: &mut EventBuffer, time: u32, kind: EventKind, envelope: &E
 pub fn inspect(bundle: &Path, plugin_id: &str) -> Result<Envelope, RenderError> {
     // SAFETY: as in `render` — loading a bundle runs its code; the caller chooses the bundle.
     let entry =
-        unsafe { PluginEntry::load(bundle) }.map_err(|e| RenderError::Load(e.to_string()))?;
+        unsafe { crate::entry::load(bundle) }.map_err(|e| RenderError::Load(e.to_string()))?;
     let factory = entry
         .get_plugin_factory()
         .ok_or(RenderError::NoPluginFactory)?;
@@ -746,7 +746,7 @@ pub fn inspect(bundle: &Path, plugin_id: &str) -> Result<Envelope, RenderError> 
 pub fn list_plugins(bundle: &Path) -> Result<Vec<String>, RenderError> {
     // SAFETY: as in `render`.
     let entry =
-        unsafe { PluginEntry::load(bundle) }.map_err(|e| RenderError::Load(e.to_string()))?;
+        unsafe { crate::entry::load(bundle) }.map_err(|e| RenderError::Load(e.to_string()))?;
     let factory = entry
         .get_plugin_factory()
         .ok_or(RenderError::NoPluginFactory)?;
@@ -762,7 +762,7 @@ pub fn list_plugins(bundle: &Path) -> Result<Vec<String>, RenderError> {
 /// caller must have stopped audio and armed the scan sentinel first.
 pub fn describe(bundle: &Path) -> Vec<crate::discovery::Found> {
     // SAFETY: as in `render` — loading a bundle runs its code; the scanner decides which.
-    let Ok(entry) = (unsafe { PluginEntry::load(bundle) }) else {
+    let Ok(entry) = (unsafe { crate::entry::load(bundle) }) else {
         return Vec::new();
     };
     let Some(factory) = entry.get_plugin_factory() else {
@@ -828,7 +828,7 @@ fn describe_one(entry: &PluginEntry, plugin_id: &str) -> Result<PluginInstance<M
 pub fn inspect_effect(bundle: &Path, plugin_id: &str) -> Result<EffectEnvelope, RenderError> {
     // SAFETY: as in `render` — loading a bundle runs its code; the caller chooses the bundle.
     let entry =
-        unsafe { PluginEntry::load(bundle) }.map_err(|e| RenderError::Load(e.to_string()))?;
+        unsafe { crate::entry::load(bundle) }.map_err(|e| RenderError::Load(e.to_string()))?;
     let mut instance = describe_one(&entry, plugin_id).map_err(RenderError::Refused)?;
     negotiate_effect(&mut instance).map_err(RenderError::Refused)
 }
