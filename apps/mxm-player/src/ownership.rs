@@ -40,8 +40,12 @@ pub struct HostWindow {
 
 #[cfg(target_os = "windows")]
 type RawHandle = isize;
+/// Elsewhere no window is enumerated or owned yet, so no handle is ever made. A type of its own
+/// rather than `()`, so the code shared with Windows passes it as it passes a handle there.
 #[cfg(not(target_os = "windows"))]
-type RawHandle = ();
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(dead_code)]
+struct RawHandle;
 
 impl HostWindow {
     /// Reads the player's window handle from anything eframe gives us.

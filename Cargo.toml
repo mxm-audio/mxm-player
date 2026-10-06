@@ -24,15 +24,15 @@ repository = "https://github.com/mxm-audio/mxm-player"
 
 [workspace.dependencies]
 # Pinned exactly, as in every MXM repository; Cargo.lock is committed. Own crates by path,
-# the kit's from mxm-kit v0.3.0, another product's from its repository at v0.1.0.
-mxm-audio-file = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.0" }
-mxm-audio-file-decode = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.0" }
-mxm-control-map = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.0" }
-mxm-measure = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.0" }
+# the kit's from mxm-kit v0.3.1, another product's from its repository at v0.1.0.
+mxm-audio-file = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.1" }
+mxm-audio-file-decode = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.1" }
+mxm-control-map = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.1" }
+mxm-measure = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.1" }
 mxm-player = { path = "apps/mxm-player" }
 mxm-player-harness = { path = "apps/mxm-player-harness" }
-mxm-ui = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.0" }
-mxm-xtask = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.0" }
+mxm-ui = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.1" }
+mxm-xtask = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.1" }
 
 [profile.release]
 lto = "thin"

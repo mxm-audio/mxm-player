@@ -2279,8 +2279,8 @@ dependencies = [
 
 [[package]]
 name = "mxm-audio-file"
-version = "0.3.0"
-source = "git+https://github.com/mxm-audio/mxm-kit?tag=v0.3.0#be374c7bd9849bca3d545dea0529b456308cd920"
+version = "0.3.1"
+source = "git+https://github.com/mxm-audio/mxm-kit?tag=v0.3.1#e3f5064b800e471c0e0e0edfd8489ae75115c2b0"
 dependencies = [
  "aifc",
  "flacenc",
@@ -2289,16 +2289,16 @@ dependencies = [
 
 [[package]]
 name = "mxm-audio-file-decode"
-version = "0.3.0"
-source = "git+https://github.com/mxm-audio/mxm-kit?tag=v0.3.0#be374c7bd9849bca3d545dea0529b456308cd920"
+version = "0.3.1"
+source = "git+https://github.com/mxm-audio/mxm-kit?tag=v0.3.1#e3f5064b800e471c0e0e0edfd8489ae75115c2b0"
 dependencies = [
  "symphonia",
 ]
 
 [[package]]
 name = "mxm-control-map"
-version = "0.3.0"
-source = "git+https://github.com/mxm-audio/mxm-kit?tag=v0.3.0#be374c7bd9849bca3d545dea0529b456308cd920"
+version = "0.3.1"
+source = "git+https://github.com/mxm-audio/mxm-kit?tag=v0.3.1#e3f5064b800e471c0e0e0edfd8489ae75115c2b0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2306,8 +2306,8 @@ dependencies = [
 
 [[package]]
 name = "mxm-measure"
-version = "0.3.0"
-source = "git+https://github.com/mxm-audio/mxm-kit?tag=v0.3.0#be374c7bd9849bca3d545dea0529b456308cd920"
+version = "0.3.1"
+source = "git+https://github.com/mxm-audio/mxm-kit?tag=v0.3.1#e3f5064b800e471c0e0e0edfd8489ae75115c2b0"
 
 [[package]]
 name = "mxm-player"
@@ -2351,8 +2351,8 @@ dependencies = [
 
 [[package]]
 name = "mxm-ui"
-version = "0.3.0"
-source = "git+https://github.com/mxm-audio/mxm-kit?tag=v0.3.0#be374c7bd9849bca3d545dea0529b456308cd920"
+version = "0.3.1"
+source = "git+https://github.com/mxm-audio/mxm-kit?tag=v0.3.1#e3f5064b800e471c0e0e0edfd8489ae75115c2b0"
 dependencies = [
  "dirs",
  "egui",
@@ -2362,8 +2362,8 @@ dependencies = [
 
 [[package]]
 name = "mxm-xtask"
-version = "0.3.0"
-source = "git+https://github.com/mxm-audio/mxm-kit?tag=v0.3.0#be374c7bd9849bca3d545dea0529b456308cd920"
+version = "0.3.1"
+source = "git+https://github.com/mxm-audio/mxm-kit?tag=v0.3.1#e3f5064b800e471c0e0e0edfd8489ae75115c2b0"
 dependencies = [
  "anyhow",
  "mxm-control-map",
