@@ -164,7 +164,7 @@ impl Harness {
     ) -> Result<Self, String> {
         // SAFETY: loading a CLAP bundle runs its code. These are our own artifacts, loaded by
         // path from the build tree.
-        let entry = unsafe { PluginEntry::load(bundle) }.map_err(|e| e.to_string())?;
+        let entry = unsafe { mxm_player::entry::load(bundle) }.map_err(|e| e.to_string())?;
         let (shared, mut instance) = instantiate(&entry, plugin_id)?;
 
         let envelope = negotiate(&mut instance).map_err(|r| r.to_string())?;
@@ -222,7 +222,8 @@ impl Harness {
         let mut kept = Vec::with_capacity(fx.len());
         for (position, (fx_bundle, fx_id)) in fx.iter().enumerate() {
             // SAFETY: as above - our own artifacts, loaded by path.
-            let fx_entry = unsafe { PluginEntry::load(fx_bundle) }.map_err(|e| e.to_string())?;
+            let fx_entry =
+                unsafe { mxm_player::entry::load(fx_bundle) }.map_err(|e| e.to_string())?;
             let (fx_shared, mut fx_instance) = instantiate(&fx_entry, fx_id)?;
             let fx_envelope = negotiate_effect(&mut fx_instance).map_err(|r| r.to_string())?;
             let fx_tail: Option<PluginTail> = fx_instance.plugin_shared_handle().get_extension();

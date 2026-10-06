@@ -9,7 +9,8 @@
 //!
 //! So the library is opened with `RTLD_NODELETE`: dropping the entry still deinitialises the plugin
 //! as CLAP requires, but its code stays mapped, as most hosts leave it. Windows and macOS load it as
-//! clack-host always has.
+//! clack-host always has. Every load goes through here, the test harness's included
+//! (`mxm-player-harness`): one direct `PluginEntry::load` left elsewhere is the crash back.
 
 use clack_host::entry::{PluginEntry, PluginEntryError};
 use std::path::Path;
@@ -19,7 +20,7 @@ use std::path::Path;
 /// # Safety
 ///
 /// As [`PluginEntry::load`]: loading a library runs its code.
-pub(crate) unsafe fn load(bundle: &Path) -> Result<PluginEntry, PluginEntryError> {
+pub unsafe fn load(bundle: &Path) -> Result<PluginEntry, PluginEntryError> {
     #[cfg(target_os = "linux")]
     {
         use clack_host::entry::LibraryEntry;

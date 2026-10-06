@@ -13,7 +13,7 @@ pub mod config;
 pub mod control_map;
 pub mod discovery;
 pub mod engine;
-mod entry;
+pub mod entry;
 pub mod envelope;
 pub mod events;
 pub mod host;

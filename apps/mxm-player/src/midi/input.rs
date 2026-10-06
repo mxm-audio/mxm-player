@@ -73,7 +73,12 @@ pub fn connect(
     clock: Arc<clock::Clock>,
     host: Arc<crate::host::PlayerHostState>,
 ) -> Result<Connection, String> {
-    let mut input = MidiInput::new("mxm-player").map_err(|e| e.to_string())?;
+    // The reason names the port even when no port can be opened at all: a Linux machine without the
+    // ALSA sequencer (`/dev/snd/seq`) refuses the client itself, and the user still needs to know
+    // which input it is about.
+    let mut input = MidiInput::new("mxm-player").map_err(|e| {
+        format!("MIDI input port `{port_name}` cannot be opened: this system offers no MIDI ({e})")
+    })?;
     input.ignore(midir::Ignore::None);
 
     let port = find_port(&input, port_name)?;
