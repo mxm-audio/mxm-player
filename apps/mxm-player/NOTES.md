@@ -1829,8 +1829,7 @@ player and having `service_editor` echo it back. Embedded DAW editors still nego
 host. Do not compensate for this traffic by lowering `MXM_SERVICE_MS`: the unnecessary wake itself
 bypasses that cadence. The host's generic queued-request handling is unchanged.
 
-The collection's `editor_resize` (the local workspace's `collection-tests/editor_resize.rs`, not on
-GitHub yet; this repository's until the split into one repository per product) is an ignored Windows desktop regression against **all twenty shipped
+The collection's `editor_resize` (newdawn-workspace's [`collection-tests/editor_resize.rs`](https://github.com/mxm-audio/newdawn-workspace/blob/main/collection-tests/editor_resize.rs); this repository's until the split into one repository per product) is an ignored Windows desktop regression against **all twenty shipped
 editors**, with no production settings or audio device: 24 native resizes per editor, repeated
 after close/reopen. A manifest-completeness oracle exposed mxm-bucket-delay's omission from the
 first nine-entry run. The last thirteen-entry Windows run (2026-09-11; mixed already-staged
@@ -1894,8 +1893,8 @@ and a synth change does not re-test the sequencer. Everything after this table i
 merging into main, or for an explicit request: the twenty bundles, the editor sweeps, a bare
 `cargo test -p mxm-player` and clippy with `--all-targets`. *Since the split (2026-10-06):* there
 is no merge into main to gate; the gate below is run before a push or on request, on Windows and
-on Linux in WSL, and `editor_resize`, the sweep over all twenty bundles, is in the local
-workspace's `collection-tests/`.
+on Linux in WSL, and `editor_resize`, the sweep over all twenty bundles, is in
+newdawn-workspace's [`collection-tests/`](https://github.com/mxm-audio/newdawn-workspace/tree/main/collection-tests).
 
 **Name as few integration files as the change reaches.** Each file in `tests/` is its own binary
 that links the whole app, so every file named costs a link, and that dominates the time. Filter
@@ -1928,8 +1927,8 @@ cargo build -p nice-plug-output-fixture      # output allocation regression
 ```
 
 The collection's native resize regression, `editor_resize`, needs every product's bundle in one
-profile, so it lives in the local workspace with the other collection tests (`collection-tests/`,
-not on GitHub yet).
+profile, so it lives in newdawn-workspace with the other collection tests
+([`collection-tests/`](https://github.com/mxm-audio/newdawn-workspace/tree/main/collection-tests)).
 
 ```bash
 cargo xtask fixtures --release          # -> target/fixtures/mxm-fixtures.clap
@@ -1948,7 +1947,7 @@ The matrix, and what each layer exists to prove:
 
 *Since the split (2026-10-06):* a `plugins/<plugin>/host-tests/…` row is in that product's own
 repository (`https://github.com/mxm-audio/<plugin>`) and runs there, after `cargo xtask bundle
-<plugin>` in that repository; the `collection-tests/` row is in the local workspace.
+<plugin>` in that repository; the `collection-tests/` row is in newdawn-workspace.
 
 **Three layers, each answering what the one below cannot.** Layer 1 bypasses the app entirely and
 always did; layers 2 and 3 exist because it does.
@@ -1967,7 +1966,7 @@ always did; layers 2 and 3 exist because it does.
 | 2 | `tests/t1_oracles.rs` | The two oracles the UI layer rests on, each proven by falsification |
 | 2 | `tests/t2_regressions.rs` | One test per defect a human found by looking at the screen |
 | 2 | `tests/t7_editor.rs` | Floating-GUI advertisement and independent editor state headlessly, including mxm-fx-curve through the effect path; ignored native-window cases open, service, close and reopen covered editors, including mxm-mono-08 and mxm-fx-curve |
-| 2 | the local workspace's `collection-tests/editor_resize.rs` (not on GitHub yet) | Every `bundler.toml` declaration appears exactly once across the editor and explicit-headless inventories; all twenty shipped floating editors, including mxm-fx-convolution, mxm-fx-delay, mxm-classic-verb, mxm-creative-sampler, mxm-drum-machine, mxm-para-07 and mxm-fx-curve, open, traverse 24 native Windows sizes without host resize round-trips, close and reopen. Run explicitly against complete debug and release editor inventories. The sampler's separate OS-file-drop gate is not implied by resizing |
+| 2 | newdawn-workspace's [`collection-tests/editor_resize.rs`](https://github.com/mxm-audio/newdawn-workspace/blob/main/collection-tests/editor_resize.rs) | Every `bundler.toml` declaration appears exactly once across the editor and explicit-headless inventories; all twenty shipped floating editors, including mxm-fx-convolution, mxm-fx-delay, mxm-classic-verb, mxm-creative-sampler, mxm-drum-machine, mxm-para-07 and mxm-fx-curve, open, traverse 24 native Windows sizes without host resize round-trips, close and reopen. Run explicitly against complete debug and release editor inventories. The sampler's separate OS-file-drop gate is not implied by resizing |
 | 3 | `tests/t3_session.rs` | Deterministic sessions: byte-identical audio, and `load` while streaming completing promptly |
 | 3 | `plugins/mxm-mono-01/host-tests/tests/golden_audio.rs` | A fixed score still sounds the same **through the real app path** — mxm-mono-01 |
 | 3 | `plugins/mxm-poly-06/host-tests/tests/golden_audio.rs` | The same for mxm-poly-06, shipped with the instrument rather than after it |
