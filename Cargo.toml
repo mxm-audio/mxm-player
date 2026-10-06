@@ -1,0 +1,52 @@
+[workspace]
+resolver = "3"
+members = [
+    "apps/mxm-player",
+    "apps/mxm-player-harness",
+    "tests/clap-fixtures",
+    "tests/clap-fixtures/nice-plug-output",
+    "xtask",
+]
+# The fixture plugins are built by `cargo xtask fixtures`, not by a plain `cargo build`.
+default-members = [
+    "apps/mxm-player",
+    "apps/mxm-player-harness",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"        # the GUI floor; crates that do not need it override downward
+license = "GPL-3.0-or-later"
+authors = ["mxm"]
+repository = "https://github.com/mxm-audio/mxm-player"
+
+[workspace.dependencies]
+# Pinned exactly, as in every MXM repository; Cargo.lock is committed. Own crates by path,
+# the kit's from mxm-kit v0.3.0, another product's from its repository at v0.1.0.
+mxm-audio-file = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.0" }
+mxm-audio-file-decode = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.0" }
+mxm-control-map = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.0" }
+mxm-measure = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.0" }
+mxm-player = { path = "apps/mxm-player" }
+mxm-player-harness = { path = "apps/mxm-player-harness" }
+mxm-ui = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.0" }
+mxm-xtask = { git = "https://github.com/mxm-audio/mxm-kit", tag = "v0.3.0" }
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+
+[profile.dev.package.mxm-measure]
+opt-level = 3
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = "none"
+
+# nice-plug 0.3.0 and egui-baseview 0.7.0 as published, plus the patches in each fork's
+# PATCHES.md, as every MXM repository that builds a plugin patches them.
+[patch.crates-io]
+nice-plug = { git = "https://github.com/mxm-audio/nice-plug", tag = "0.3.0-mxm.1" }

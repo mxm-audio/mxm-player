@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+
+  "_comment": [
+    "mxm-mono-01's place in the MXM Synth Collection control map.",
+    "Ships beside the .clap bundle, because an instrument owns its own mapping: somebody who",
+    "installs only this plugin must still get a working controller layout.",
+    "The role taxonomy itself lives in docs/MXM_CONTROL_MAP.md and is common to every instrument.",
+    "Parameter references are the plugin's own permanent string ids from src/params.rs."
+  ],
+
+  "instruments": [
+    {
+      "clap_id": "dk.mxm.mxm-mono-01",
+      "name": "mxm-mono-01",
+      "params": {
+        "osc1.range":          "oscrange",
+        "osc1.tune":           "tune",
+        "osc1.pulse_width":    "pulsewidth",
+        "osc1.pwm_depth":      "mod_width_lfo",
+
+        "mixer.src1":          "sawlevel",
+        "mixer.src2":          "pulselevel",
+        "mixer.sub_level":     "sublevel",
+        "mixer.sub_shape":     "subtype",
+        "mixer.noise":         "noiselevel",
+
+        "filter.cutoff":       "cutoff",
+        "filter.resonance":    "resonance",
+        "filter.env_amount":   "mod_cutoff_env",
+        "filter.key_track":    "mod_cutoff_key",
+        "filter.lfo_amount":   "mod_cutoff_lfo",
+
+        "amp_env.attack":      "attack",
+        "amp_env.decay":       "decay",
+        "amp_env.sustain":     "sustain",
+        "amp_env.release":     "release",
+
+        "lfo1.rate":           "lforate",
+        "lfo1.shape":          "lfowave",
+        "lfo1.to_pitch":       "mod_pitch_lfo",
+        "lfo1.to_filter":      "mod_cutoff_lfo",
+
+        "voice.glide":         "glide",
+        "voice.bend_range":    "bendrange",
+        "voice.note_priority": "retrigger",
+        "voice.vca_source":    "vcasource",
+        "voice.output":        "outgain"
+      }
+    }
+  ]
+}

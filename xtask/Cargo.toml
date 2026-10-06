@@ -1,0 +1,11 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# The tooling every MXM repository's xtask shares: bundling and control-map staging.
+mxm-xtask.workspace = true
+nice-plug-xtask = "=0.1.1"
+anyhow = "=1.0.104"

@@ -1,0 +1,18 @@
+[package]
+name         = "clap-fixtures"
+version      = "0.0.0"
+edition      = "2024"
+publish      = false
+rust-version = "1.87"           # no GUI dependencies — belongs here, NOT under [lib]
+license = "GPL-3.0-or-later"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+clack-plugin = "=0.1.1"
+clack-extensions = { version = "=0.1.1", default-features = false, features = [
+    "clack-plugin", "audio-ports", "audio-ports-config", "note-ports", "params",
+    "log",                      # dk.mxm.fixture.log-spam
+    "tail",                     # dk.mxm.fixture.tail-shift, dk.mxm.fixture.effect
+] }

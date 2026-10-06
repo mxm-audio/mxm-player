@@ -1,0 +1,23 @@
+[package]
+name = "mxm-player-harness"
+description = "The harnesses MXM Player's tests drive it with: the app with no window, and the audio worker on the test thread. Shared with every plugin's host tests."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+# Driven by other packages' tests; it has none of its own.
+test = false
+doctest = false
+
+[dependencies]
+mxm-player.workspace = true
+egui = "=0.36.1"
+egui_kittest = { version = "=0.36.1", features = ["eframe"] }
+clack-host = "=0.1.1"
+clack-extensions = { version = "=0.1.1", default-features = false, features = ["clack-host", "tail"] }
+rtrb = "=0.3.5"

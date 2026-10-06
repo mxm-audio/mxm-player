@@ -1,0 +1,13 @@
+[package]
+name = "nice-plug-output-fixture"
+version = "0.0.0"
+edition = "2024"
+publish = false
+rust-version = "1.87"
+license = "GPL-3.0-or-later"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+nice-plug = { version = "=0.3.0", default-features = false, features = ["assert_process_allocs"] }

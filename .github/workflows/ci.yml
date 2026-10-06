@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      # Pinned, and moved on purpose: a new stable's lints must not turn a green tree red overnight.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.0"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libjack-jackd2-dev libx11-dev libx11-xcb-dev libxcursor-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev mesa-vulkan-drivers
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: What the player's tests load
+        run: |
+          cargo xtask fixtures --release
+          cargo build --locked -p nice-plug-output-fixture
+          cargo xtask fetch
+      - name: Fast tier
+        run: cargo test --locked

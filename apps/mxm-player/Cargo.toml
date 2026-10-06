@@ -1,0 +1,76 @@
+[package]
+name         = "mxm-player"
+# Two binaries live here (the player and its CLI); `cargo run` means the player.
+default-run  = "mxm-player"
+version      = "0.1.0"
+edition      = "2024"
+rust-version = "1.95"
+license = "GPL-3.0-or-later"
+publish      = false
+
+[lib]
+name = "mxm_player"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mxm-player"
+path = "src/main.rs"
+
+[dependencies]
+clack-host = "=0.1.1"
+clack-extensions = { version = "=0.1.1", default-features = false, features = [
+    "clack-host",
+    "audio-ports", "audio-ports-config", "note-ports",
+    "params", "state", "latency", "tail", "log",
+    # `gui`: the player shows a plugin's own interface in a floating window it owns.
+    "gui",
+] }
+
+cpal   = { version = "=0.18.2", features = ["realtime"] }
+midir  = "=0.11.0"
+wmidi  = "=4.0.11"
+rtrb   = "=0.3.5"
+
+# `wgpu`, not `glow`, and it is load-bearing rather than a preference. A plugin editor renders
+# through `nice-plug-egui`'s OpenGL backend in this same process and thread; two OpenGL painters
+# share one global "current context" and corrupt each other. See `docs/known-issues.md`.
+# `main.rs` additionally excludes wgpu's own GL backend, or the conflict returns invisibly.
+# `x11` and `wayland`: winit's two Linux backends. Without either, winit refuses to compile on
+# Linux at all; they take effect there only, so Windows and macOS build exactly as before.
+eframe = { version = "=0.36.1", default-features = false, features = [
+    "wgpu",
+    "default_fonts",
+    "x11",
+    "wayland",
+] }
+egui   = "=0.36.1"
+
+# The collection's interface foundation. Landed at M4a; the player's interim unstyled widgets
+# are gone and `src/ui/adapter.rs` now only translates between CLAP snapshots and its controls.
+mxm-ui = { workspace = true }
+# The collection's control-map standard and its schema; `src/control_map/schema.rs` re-exports it.
+mxm-control-map = { workspace = true }
+
+# Reading the player's own window handle, to make it the owner of a plugin's editor window.
+# Same version eframe already resolves to, so this adds nothing to the tree - it only makes the
+# type nameable here. See `src/ownership.rs`.
+raw-window-handle = "=0.6.2"
+
+crossbeam-queue = "=0.3.13"
+
+serde      = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.145"
+dirs       = "=5.0.1"
+walkdir    = "=2.5.0"
+# Writes exports and the session driver's captures. The encoder only: the player decodes nothing, so
+# no MPL-2.0 code is in its graph under any build grouping. `crates/mxm-audio-file/AGENTS.md`.
+mxm-audio-file = { workspace = true }
+
+[dev-dependencies]
+# The harnesses these tests drive the player with, shared with every plugin's host tests.
+mxm-player-harness.workspace = true
+egui_kittest = { version = "=0.36.1", features = ["eframe"] }
+# Tests read exports back through the collection's decoder. Test-only, never in the shipped player.
+mxm-audio-file-decode = { workspace = true }
+kittest = "=0.4.0"
+mxm-measure = { workspace = true }
