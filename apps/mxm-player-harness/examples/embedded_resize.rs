@@ -139,7 +139,7 @@ mod mac {
         }
 
         gui.destroy(&mut handle);
-        drop(handle);
+        // The plugin goes before the window it was embedded in.
         drop(instance);
         window.close();
         println!("{}", if failures == 0 { "PASS" } else { "FAIL" });
