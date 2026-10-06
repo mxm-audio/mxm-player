@@ -1,10 +1,11 @@
 name: CI
 
 on:
+  # Only on a release tag, or by hand from the Actions tab. The owner, 2026-10-06: "only run CI on
+  # tags. Otherwise it all takes too long." Pushes to main and pull requests start nothing.
   push:
-    branches: [main]
     tags: ["v*"]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
