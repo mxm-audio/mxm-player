@@ -169,7 +169,7 @@ count**, since a filter matching nothing passes. [NOTES.md § Per change](NOTES.
 | `src/control_map/` or the collection standard/product maps | `--lib control_map` and `--test t5_control_map`. Its inventory sweep of every `bundler.toml` product map left at the split: each product's `cargo xtask bundle` now checks its map (mxm-kit's `control_maps::check`) |
 | The effect chain | `--test t11_fx_chain` and `--test t13_effect_locks`; for one effect, its own `cargo test -p <effect>-host-tests --test effect_chain`, run in that effect's repository |
 | `src/host/`, `src/engine/`, `envelope.rs`, `discovery.rs` | Layer 1 below: `p0_envelope`, `p1_engine`, `p2_playing`, `p3_testable`, `verification`, and mxm-mono-01's bit-exact hosting proof `cargo test -p mxm-mono-01-host-tests --test hosting`, run in the mxm-mono-01 repository |
-| Floating editor windows | `--test t7_editor`. `editor_resize` needs every product's bundle, so it lives in the local workspace's `collection-tests/` (not on GitHub yet) |
+| Floating editor windows | `--test t7_editor`. `editor_resize` needs every product's bundle, so it is a collection-wide test the maintainer runs (not public yet) |
 | One synth, its plugin or its DSP crate | That crate's own tests, then `cargo test -p <synth>-host-tests` (its `behaviour` and `golden_audio`) if the change is audible, both run in that synth's repository. Never the sequencer files |
 
 Lint with `cargo clippy -p mxm-player --lib` while iterating, `--all-targets` once a test file changed. A
