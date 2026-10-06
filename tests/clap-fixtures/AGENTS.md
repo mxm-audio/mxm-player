@@ -101,7 +101,7 @@ cargo xtask fixtures --release          # -> target/fixtures/mxm-fixtures.clap
 cargo build -p nice-plug-output-fixture # -> target/debug; allocation guard enabled
 cargo test -p mxm-player                # the fixtures' only real consumer
 cargo clippy -p clap-fixtures --all-targets
-cargo fmt -p clap-fixtures              # -p: `--all` would touch vendor/
+cargo fmt -p clap-fixtures              # -p kept `--all` off vendor/ in the monorepo; none here now
 clap-validator validate -p dk.mxm.fixture.effect target/release/clap_fixtures.dll
 clap-validator validate -p dk.mxm.fixture.effect-mono target/release/clap_fixtures.dll
 ```

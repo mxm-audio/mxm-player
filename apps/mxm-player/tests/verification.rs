@@ -261,8 +261,8 @@ fn a_dense_buffer_of_events_does_not_make_the_callback_allocate() {
     h.render(256);
     h.render(256);
 
-    // Below the 512-event ceiling nice-plug's own input queue has (see docs/known-issues.md), so
-    // this measures the host rather than tripping the plugin's allocation assertion.
+    // Below the 512-event ceiling nice-plug's own input queue has (see docs/known-issues.md in
+    // mxm-kit), so this measures the host rather than tripping the plugin's allocation assertion.
     for i in 0..400u32 {
         let source = (i % 2) as usize;
         h.push(

@@ -7,10 +7,14 @@ Parent: [`../AGENTS.md`](../AGENTS.md)
 The repository's build tooling, reached through `cargo xtask` (aliased in `.cargo/config.toml` to
 `run --package xtask --release --`).
 
-Two commands:
+Three commands:
 
 - `bundle` — the shared tooling in [`crates/mxm-xtask`](https://github.com/mxm-audio/mxm-kit/blob/main/crates/mxm-xtask/AGENTS.md):
-  `nice_plug_xtask`'s bundler, followed by staging each plugin's control map beside its bundle
+  `nice_plug_xtask`'s bundler, followed by staging each plugin's control map beside its bundle.
+  *Since the split (2026-10-06):* this repository has no plugin of its own to bundle
+- `fetch` — the same shared tooling: builds the plugins of other MXM repositories that this
+  repository's tests load, at the tags `test-bundles.txt` pins, into `target/bundled/` and
+  `target/debug/`
 - `fixtures` — the one command only this repository needs: builds and stages the test-only CLAP
   plugins in `tests/clap-fixtures`
 
@@ -42,15 +46,20 @@ Owns `src/{main.rs, fixtures.rs}` and `Cargo.toml`. Bundling and control-map sta
 
 A new plugin needs a row in the root `bundler.toml` mapping crate name to display bundle name; no
 xtask change is required for it, and its `control-map.json` is picked up from the same row.
+*Since the split (2026-10-06):* that row is in the plugin's own repository; this repository has no
+`bundler.toml`. A plugin this repository's tests load is a line in `test-bundles.txt`.
 
 # Verification
 
 ```bash
-cargo xtask bundle mxm-mono-01 --release    # -> target/bundled/mxm-mono-01.clap
-                                        #    + mxm-mono-01.control-map.json
+cargo xtask fetch                       # -> target/bundled/mxm-mono-01.clap
+                                        #    + mxm-mono-01.control-map.json, and the rest
 cargo xtask fixtures --release          # -> target/fixtures/mxm-fixtures.clap
 cargo clippy -p xtask --all-targets
 ```
+
+*Since the split (2026-10-06):* the first line was `cargo xtask bundle mxm-mono-01 --release`, which
+now runs in the mxm-mono-01 repository.
 
 The check is that both artifacts appear at the paths above and that
 `clap-validator validate "target/bundled/mxm-mono-01.clap"` can load the bundled one. There are no unit

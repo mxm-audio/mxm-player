@@ -2,7 +2,8 @@
 //!
 //! **No longer interim.** Until M4a this module held plain unstyled eframe widgets, deliberately
 //! confined here so the retrofit would be bounded to one file rather than smeared across every
-//! panel. `crates/ui` has landed, so the bodies now call `mxm_ui` and the compromise is over.
+//! panel. `crates/ui` (mxm-kit's `mxm-ui`) has landed, so the bodies now call `mxm_ui` and the
+//! compromise is over.
 //!
 //! What the module still exists for is the *translation*: `mxm_ui` speaks normalised values and
 //! knows nothing about CLAP, while the player speaks [`ParamSnapshot`] and real units. Keeping

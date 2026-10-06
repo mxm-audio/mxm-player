@@ -7,7 +7,7 @@
 //!
 //! What this layer still cannot see is the one defect that actually shipped: the player and a
 //! plugin editor both render through OpenGL in one process, and `kittest` draws into no window at
-//! all. That needs a real display — `docs/known-issues.md` records it.
+//! all. That needs a real display — `docs/known-issues.md` in mxm-kit records it.
 
 use mxm_player_harness::app_harness;
 

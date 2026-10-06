@@ -13,7 +13,8 @@ pub mod harness;
 ///
 /// Read from `CARGO_MANIFEST_DIR` at run time — cargo sets it for every test it runs — rather than
 /// at compile time, because this crate's own manifest is wherever the dependency was fetched to. So
-/// the answer is right in the collection's workspace and in a repository of one plugin's own.
+/// the answer is right in this repository and in each product's own (as it was in the monorepo's
+/// workspace).
 pub fn workspace_root() -> PathBuf {
     let start = std::env::var_os("CARGO_MANIFEST_DIR")
         .map(PathBuf::from)

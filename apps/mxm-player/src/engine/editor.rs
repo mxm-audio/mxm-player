@@ -4,9 +4,9 @@
 //!
 //! The plugin creates and owns a top-level window; the player never gives it a parent. Embedding —
 //! a plugin's window living inside ours — was rejected for reasons that are recorded in
-//! `plans/plan-plugin-gui-hosting.md` §6, the shortest of which is that **Wayland has no
-//! cross-process embedding primitive at all**, so CLAP does not embed there. Floating works
-//! everywhere and needs no per-platform code here.
+//! `plans/plan-plugin-gui-hosting.md` §6 (in the private archive), the shortest of which is that
+//! **Wayland has no cross-process embedding primitive at all**, so CLAP does not embed there.
+//! Floating works everywhere and needs no per-platform code here.
 //!
 //! # Three invariants, each of which fails silently if broken
 //!
@@ -431,10 +431,11 @@ impl Engine {
 
     /// Whether the loaded plugin will open a **floating** editor, without creating one.
     ///
-    /// This is the question the vendored nice-plug patch exists to change: upstream refuses every
-    /// floating configuration, so before the patch this is `false` for mxm-mono-01 and the player can
-    /// never show its interface. Separate from [`Engine::editor_available`] because it needs a
-    /// main-thread handle and therefore `&mut self`.
+    /// This is the question the nice-plug fork's patch (the monorepo's vendored nice-plug) exists
+    /// to change: upstream refuses every floating configuration, so before the patch this is
+    /// `false` for mxm-mono-01 and the player can never show its interface. Separate from
+    /// [`Engine::editor_available`] because it needs a main-thread handle and therefore
+    /// `&mut self`.
     pub fn editor_floating_supported(&mut self) -> bool {
         self.floating_supported_for(EditorTarget::Source)
     }

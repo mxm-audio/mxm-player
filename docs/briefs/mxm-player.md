@@ -4,7 +4,7 @@ The player is a host, not an instrument, so the §14 questions land slightly dif
 no source hardware to remove things from, and its "sound-design task" is somebody else's. It is
 still an MXM interface, so it answers them.
 
-**Status.** This brief describes the target. `crates/ui` landed at M4a and the player renders
+**Status.** This brief describes the target. `crates/ui` (mxm-kit's `mxm-ui`) landed at M4a and the player renders
 through it: the interim unstyled-widget foundation is gone, and `apps/mxm-player/src/ui/adapter.rs`
 now only translates between CLAP parameter snapshots and the shared controls. The §15 QA gate has
 not been run in full, and this brief does not claim to have passed it.
@@ -91,7 +91,7 @@ the frame around other people's instruments, and a strong accent of its own woul
 whichever plugin is loaded. The one saturated colour it does use is the running/held green, which
 carries state rather than identity, and the failure red.
 
-Contrast is measured, not eyeballed, in both themes, when the design lands on `crates/ui`.
+Contrast is measured, not eyeballed, in both themes, when the design lands on `crates/ui` (mxm-kit's `mxm-ui`).
 
 ## 8. Live visualisations that materially help
 

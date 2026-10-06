@@ -5,9 +5,9 @@ use mxm_player::ui::{MIN_SIZE, PlayerApp, REFERENCE_SIZE};
 /// The graphics backends the player will accept, and the reason it is a restricted set.
 ///
 /// The player renders through `wgpu` so that it shares nothing with a plugin editor rendering
-/// through OpenGL in the same process — see `docs/known-issues.md`. **But wgpu has its own
-/// GL backend**, so asking for wgpu is not by itself asking for something that is not OpenGL: if it
-/// fell back to GL the original conflict would return with no visible sign that anything had
+/// through OpenGL in the same process — see `docs/known-issues.md` in mxm-kit. **But wgpu has its
+/// own GL backend**, so asking for wgpu is not by itself asking for something that is not OpenGL:
+/// if it fell back to GL the original conflict would return with no visible sign that anything had
 /// changed. Naming the three explicitly is what makes the separation a property of the build
 /// rather than a hope about adapter selection.
 const BACKENDS: eframe::wgpu::Backends = eframe::wgpu::Backends::DX12

@@ -55,8 +55,8 @@ const ENVELOPE_WINDOW: usize = 128;
 /// primitive until the second candidate consumer was examined: `mxm-shimmer`'s preset audit windows
 /// a *stereo* buffer for energy, not a mono one for peaks, so the two are different quantities and
 /// this is the only caller. Deciding what counts as a restart — this window, this floor, a gate that
-/// reopens at a fifth of it — was never shareable anyway. `crates/mxm-measure/AGENTS.md`'s declined
-/// register records both.
+/// reopens at a fifth of it — was never shareable anyway. The declined register in mxm-kit's
+/// `crates/mxm-measure/NOTES.md` (once its `AGENTS.md`) records both.
 fn onsets(samples: &[f32], floor: f32) -> Vec<usize> {
     let envelope: Vec<f32> = samples.chunks(ENVELOPE_WINDOW).map(peak).collect();
     let mut found = Vec::new();
@@ -3197,9 +3197,10 @@ fn a_mapped_knob_writes_into_a_selected_step_just_as_the_panel_does() {
     let param = a_param(&mut session);
 
     session.app().select_step(2);
-    // CC 74 is the collection's filter cutoff, per docs/MXM_CONTROL_MAP.md. A sweep rather than one
-    // message: a mapped knob has to **pick up** the parameter before it takes effect, so the first
-    // value is absorbed by design and a single message would prove nothing either way.
+    // CC 74 is the collection's filter cutoff, per docs/MXM_CONTROL_MAP.md in mxm-kit. A sweep
+    // rather than one message: a mapped knob has to **pick up** the parameter before it takes
+    // effect, so the first value is absorbed by design and a single message would prove nothing
+    // either way.
     for value in [127u8, 96, 64, 32, 100] {
         session.app().send_control_change(74, value);
         session.advance_blocks(1).expect("advance");

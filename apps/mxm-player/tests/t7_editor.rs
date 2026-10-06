@@ -6,7 +6,8 @@
 //! half is `cargo run -p mxm-player` and the M4b sign-off records it.
 //!
 //! Requires `cargo xtask bundle mxm-mono-01 --release`; skips with a message rather than failing if the
-//! bundle is missing, because a missing build is not a hosting bug.
+//! bundle is missing, because a missing build is not a hosting bug. Since the split (2026-10-06)
+//! mxm-mono-01 is not in this repository: `cargo xtask fetch` places its bundle here.
 
 use mxm_player_harness::app_harness;
 
@@ -24,10 +25,11 @@ fn engine_with_mxm_mono_01() -> Option<Engine> {
 
 #[test]
 fn mxm_mono_01_advertises_a_floating_editor() {
-    // **This is the regression test for the vendored nice-plug patch.** Upstream refuses every
-    // floating configuration — `if is_floating { return false }` — and with that refusal in place
-    // the player can never show mxm-mono-01's interface, on any platform. A refresh of `vendor/nice-plug`
-    // that dropped the patch would fail here rather than in a user's hands.
+    // **This is the regression test for the nice-plug fork's patch** (mxm-audio/nice-plug; the
+    // vendored nice-plug of the monorepo). Upstream refuses every floating configuration —
+    // `if is_floating { return false }` — and with that refusal in place the player can never show
+    // mxm-mono-01's interface, on any platform. A refresh of the fork that dropped the patch would
+    // fail here rather than in a user's hands.
     let Some(mut engine) = engine_with_mxm_mono_01() else {
         eprintln!("skipping: run `cargo xtask bundle mxm-mono-01 --release`");
         return;
@@ -254,9 +256,9 @@ fn engine_with_mxm_poly_06() -> Option<Engine> {
     Some(engine)
 }
 
-/// The polysynth advertises a floating editor too — the same regression test for the vendored
-/// patch as `mxm_mono_01_advertises_a_floating_editor`, because only a plugin with a test here
-/// would catch a refresh dropping the floating-window support.
+/// The polysynth advertises a floating editor too — the same regression test for the nice-plug
+/// fork's patch as `mxm_mono_01_advertises_a_floating_editor`, because only a plugin with a test
+/// here would catch a refresh dropping the floating-window support.
 #[test]
 fn mxm_poly_06_advertises_a_floating_editor() {
     let Some(mut engine) = engine_with_mxm_poly_06() else {
@@ -316,9 +318,9 @@ fn engine_with_mxm_mono_00() -> Option<Engine> {
     Some(engine)
 }
 
-/// The semi-modular advertises a floating editor too — the same regression test for the vendored
-/// patch as the siblings', because only a plugin with a test here would catch a refresh dropping
-/// the floating-window support.
+/// The semi-modular advertises a floating editor too — the same regression test for the nice-plug
+/// fork's patch as the siblings', because only a plugin with a test here would catch a refresh
+/// dropping the floating-window support.
 #[test]
 fn mxm_mono_00_advertises_a_floating_editor() {
     let Some(mut engine) = engine_with_mxm_mono_00() else {
@@ -378,8 +380,8 @@ fn engine_with_mxm_mono_02() -> Option<Engine> {
     Some(engine)
 }
 
-/// The same regression test for the vendored floating-window patch, for the same reason as the
-/// siblings': only a plugin with a test here would catch a refresh dropping the support.
+/// The same regression test for the nice-plug fork's floating-window patch, for the same reason as
+/// the siblings': only a plugin with a test here would catch a refresh dropping the support.
 #[test]
 fn mxm_mono_02_advertises_a_floating_editor() {
     let Some(mut engine) = engine_with_mxm_mono_02() else {

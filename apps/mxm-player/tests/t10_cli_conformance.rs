@@ -1,9 +1,10 @@
 //! The conformance sweep: **every act the interface offers has a verb, and every verb works.**
 //!
-//! `plans/plan-cli-conformance.md`, implemented. Two directions in one binary so they cannot pass
-//! separately: completeness walks the accessibility tree across interface states and requires
-//! every interactive widget — and every [`GestureKind`] — to map to a `COVERAGE` row or an argued
-//! `EXEMPT` row; honesty executes every row's verb over a real socket and asserts its oracle.
+//! `plans/plan-cli-conformance.md` (in the private archive), implemented. Two directions in one
+//! binary so they cannot pass separately: completeness walks the accessibility tree across
+//! interface states and requires every interactive widget — and every [`GestureKind`] — to map to
+//! a `COVERAGE` row or an argued `EXEMPT` row; honesty executes every row's verb over a real socket
+//! and asserts its oracle.
 
 use mxm_player_harness::app_harness;
 

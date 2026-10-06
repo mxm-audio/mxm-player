@@ -8,7 +8,8 @@ that step possible. It is not only a test harness: by the owner's brief it shoul
 live.
 
 **Its own product.** Own version, MSRV, README and licence, released independently. It shares the
-design system and `crates/ui` without being coupled to any plugin's release cycle.
+design system and mxm-kit's `crates/ui` (`mxm-ui`) without being coupled to any plugin's release
+cycle.
 
 ## Why a host, not a standalone wrapper
 
@@ -23,7 +24,8 @@ rebuilding, and can load third-party CLAP plugins for comparison.
 cargo run -p mxm-player --release
 
 # The artifacts the player and its tests expect:
-cargo xtask bundle mxm-mono-01 --release   # -> target/bundled/mxm-mono-01.clap
+cargo xtask fetch                      # -> target/bundled/mxm-mono-01.clap and the rest of
+                                       #    test-bundles.txt, built from their repositories
 cargo xtask fixtures --release         # -> target/fixtures/mxm-fixtures.clap
 
 cargo test -p mxm-player
@@ -31,7 +33,9 @@ cargo clippy -p mxm-player --all-targets
 ```
 
 The tests skip with an explanatory message when an artifact is missing, because a missing build is
-not a hosting bug.
+not a hosting bug. *Since the split (2026-10-06):* mxm-mono-01 is no longer in this repository, so
+it is fetched at its pinned tag rather than bundled here (`cargo xtask bundle mxm-mono-01
+--release`, as the monorepo did, now runs in the mxm-mono-01 repository).
 
 ## What it does
 
@@ -133,6 +137,12 @@ belongs to the collection's plan rather than this one. Until it lands the player
 unstyled eframe widgets, confined to `src/ui/adapter.rs` so the retrofit is bounded to that one
 module. This is not the MXM look and is not shipped as such.
 
+*Since M4a:* the compromise is over. `crates/ui` (mxm-kit's `mxm-ui`) landed, the player renders
+through it, and `src/ui/adapter.rs` now only translates between CLAP parameter snapshots and the
+shared controls (see [`docs/briefs/mxm-player.md`](../../docs/briefs/mxm-player.md), *Status*).
+
 ## Licence
 
-MIT. See `LICENSE`.
+GPL-3.0-or-later, the repository's root [`LICENSE`](../../LICENSE); third-party code is listed in
+[`NOTICE.md`](../../NOTICE.md). *Since the split (2026-10-06):* in the monorepo the player was MIT,
+with its own `LICENSE` in this folder.

@@ -1,8 +1,8 @@
 //! Regression checks for four `nice-plug` defects that MXM plugins inherit.
 //!
-//! All four are fixed by the patched `nice-plug` in `vendor/nice-plug` (see its `PATCHES.md`),
-//! and all four are still present upstream — so these tests are what stops a careless refresh of
-//! the vendored copy from silently reintroducing them.
+//! All four are fixed by the patched `nice-plug` in the nice-plug fork (mxm-audio/nice-plug, see
+//! its `PATCHES.md`; `vendor/nice-plug` in the monorepo), and all four are still present upstream
+//! — so these tests are what stops a careless refresh of the fork from silently reintroducing them.
 //!
 //! The allocation and hostile-state cases run in a subprocess, because unpatched they end in
 //! `handle_alloc_error` — an abort, which no in-process assertion can catch.

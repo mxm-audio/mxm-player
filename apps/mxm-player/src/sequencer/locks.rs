@@ -62,10 +62,10 @@
 //!
 //! # NaN means "not locked"
 //!
-//! A normalised parameter value is finite by definition — `plugins/mxm-mono-01/src/preset.rs` already
-//! refuses non-finite values on the way in — so NaN cannot collide with a real one. It costs nothing,
-//! removes a mask that could disagree with the values beside it, and makes clearing a lock a single
-//! store.
+//! A normalised parameter value is finite by definition — `plugins/mxm-mono-01/src/preset.rs` in
+//! mxm-mono-01 already refuses non-finite values on the way in — so NaN cannot collide with a real
+//! one. It costs nothing, removes a mask that could disagree with the values beside it, and makes
+//! clearing a lock a single store.
 
 /// Older files have sixteen cells. New captures extend through the last authored lock;
 /// trailing empty cells need not be stored because the sequence carries its own shape.

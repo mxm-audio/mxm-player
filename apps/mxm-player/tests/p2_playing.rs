@@ -38,10 +38,10 @@ fn harness() -> Option<Harness> {
 
 /// Blocks of 256 frames to render before the default patch is guaranteed to be at **exact** zero.
 ///
-/// **Coupled to `release` in `plugins/mxm-mono-01/src/params.rs`**, and deliberately generous. These
-/// tests assert exact silence rather than "quiet", so the wait has to cover the release time *plus*
-/// however long the exponential tail takes to flush to zero — a nominal 250 ms release is not
-/// silent at 250 ms.
+/// **Coupled to `release` in mxm-mono-01's `plugins/mxm-mono-01/src/params.rs`**, and deliberately
+/// generous. These tests assert exact silence rather than "quiet", so the wait has to cover the
+/// release time *plus* however long the exponential tail takes to flush to zero — a nominal 250 ms
+/// release is not silent at 250 ms.
 ///
 /// This was `80`, sized for a 200 ms release, and the init-patch retune broke six tests at once.
 /// That is the right failure and the wrong place to fix it fourteen times: change this one number.

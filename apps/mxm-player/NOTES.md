@@ -3,20 +3,27 @@
 The detail behind this folder's AGENTS.md: history, measurements, rationale and worked examples.
 AGENTS.md is the contract; this file is the reference it links to.
 
-References kept from the monorepo: `plans/…`, `docs/known-issues.md` and
-`scripts/capture_player.ps1` are files of the former `mxm-collection` monorepo, kept in the private
-archive and not in this repository. `plugins/AGENTS.md` and `plugins/<plugin>/host-tests` are paths
-inside each product's own repository. `docs/briefs/mxm-player.md` is in this repository's root
-`docs/`.
+References kept from the monorepo: `plans/…` and `scripts/capture_player.ps1` are files of the
+former `mxm-collection` monorepo, kept in the private archive and not in this repository.
+`docs/known-issues.md` was one of them too and is now mxm-kit's
+[`docs/known-issues.md`](https://github.com/mxm-audio/mxm-kit/blob/main/docs/known-issues.md).
+`plugins/<plugin>/…`, `plugins/<plugin>/host-tests` included, is a path inside that product's own
+repository, `https://github.com/mxm-audio/<plugin>`. `plugins/AGENTS.md` is now a short contract in
+each product repository; the rules it cites are mxm-kit's
+[`docs/plugin-conventions.md`](https://github.com/mxm-audio/mxm-kit/blob/main/docs/plugin-conventions.md).
+`crates/ui` is mxm-kit's `mxm-ui`. The vendored nice-plug (`vendor/nice-plug`) is now the
+[nice-plug fork](https://github.com/mxm-audio/nice-plug/blob/main/PATCHES.md).
+`docs/briefs/mxm-player.md` is in this repository's root `docs/`.
 
 ## Ownership in full
 
 **Its own product.** Own version, MSRV, `README.md` and `LICENSE`, released independently of any
-plugin's cycle. It shares the design system and `crates/ui` without being coupled to a plugin
-release.
+plugin's cycle. It shares the design system and mxm-kit's `crates/ui` without being coupled to a
+plugin release. *Since the split (2026-10-06):* the licence is this repository's root `LICENSE`,
+GPL-3.0-or-later; the folder's own MIT `LICENSE` was the monorepo's.
 
-Owns `src/`, `tests/`, `Cargo.toml`, `README.md`, `LICENSE`. Its tests drive it through
-[`apps/mxm-player-harness`](../mxm-player-harness/AGENTS.md) (`app_harness`, `harness`), which every
+Owns `src/`, `tests/`, `Cargo.toml`, `README.md` (and owned `LICENSE` in the monorepo). Its tests
+drive it through [`apps/mxm-player-harness`](../mxm-player-harness/AGENTS.md) (`app_harness`, `harness`), which every
 plugin's host tests share. **A plugin's tests through the player belong to that plugin**, in
 `plugins/<plugin>/host-tests` (`cargo test -p <plugin>-host-tests`), with their fixtures; this
 player's own tests use mxm-mono-01 only as the reference instrument and the fixture plugins for
@@ -202,9 +209,9 @@ puts 2,000 ordinary events and that target's explicit release in the next; mxm-p
 ends the saturated callback with a zero-velocity NoteOn carrying the prior callback's note id, which
 its event contract interprets as NoteOff. The dedicated nice-plug output fixture floods
 `ProcessContext::send_event` and terminates its separately admitted note. Thus silence/output proves
-termination rather than eviction of a same-queue note-on. The vendored
-unit test separately proves a million reported inputs select only two capacity-sized windows. They
-fail if either artifact is absent rather than silently accepting an ordinary unguarded release
+termination rather than eviction of a same-queue note-on. The nice-plug fork's unit test (the
+monorepo's vendored copy) separately proves a million reported inputs select only two
+capacity-sized windows. They fail if either artifact is absent rather than silently accepting an ordinary unguarded release
 build.
 
 ### One clock, and it is read on the audio thread
@@ -295,7 +302,7 @@ sample rate or clock changing, the cable coming out — and WASAPI answers the n
 `GetCurrentPadding` with `AUDCLNT_E_DEVICE_INVALIDATED`. None of that is the plugin's doing, the
 processor came back cleanly, and a restart is all it takes. Three things follow, each found the day
 the status bar read `OS Error -2004287484 (FormatMessageW() returned error 317)` on a real
-interface (`docs/known-issues.md`, *Windows takes the audio device away*):
+interface (mxm-kit's [`docs/known-issues.md`](https://github.com/mxm-audio/mxm-kit/blob/main/docs/known-issues.md), *Windows takes the audio device away*):
 
 - **The reason is described, not dumped.** `audio::describe` turns CPAL's classification —
   `DeviceNotAvailable`, `DeviceBusy`, `StreamInvalidated`, `HostUnavailable`, `PermissionDenied` —
@@ -562,7 +569,7 @@ claim the design system is implemented — it makes controls legible.
 The interim compromise ended at M4a. `adapter.rs` no longer holds unstyled widgets; it converts
 between CLAP's `ParamSnapshot` in real units and `mxm-ui`'s normalised controls, and that is all it
 should ever do. **Do not style outside the adapter** — a colour or a size chosen in a panel is a
-token that has escaped `crates/ui`.
+token that has escaped mxm-kit's `crates/ui`.
 
 The retrofit found three defects that a single-consumer design would have shipped, which is the
 argument for having done it before mxm-mono-01's editor was built on the same API:
@@ -597,7 +604,7 @@ no way — from the interface, from a script, from anywhere — to ask it for th
 - **`MXM_PLAYER_THEME` overrides the saved choice for one run and is never written back.** It is
   `MXM_EDITOR_THEME`'s opposite number for the host, and it exists for the same reason: a
   screenshot pair needs a known theme without disturbing what the person using the machine chose.
-  `scripts/capture_player.ps1` opens the player under it and then drives `theme dark` over the CLI,
+  `scripts/capture_player.ps1` (in the private archive) opens the player under it and then drives `theme dark` over the CLI,
   so both halves of a pair come from one launch and one scene. Before this landed, the only route
   to a dark host was editing the developer's Windows theme — a change to their machine to
   photograph ours.
@@ -1489,8 +1496,9 @@ id 7 is a filter cutoff in one instrument and a glide time in another, so:
 **The id is compared for equality, and nothing maps an old name forward.** A lock set tagged with a
 CLAP id no instrument ships under any more is simply foreign: parked, written back out, waiting for
 a plugin that will never load. That is the owner's ruling on the one rename this collection has had
-— sequences written before it are not worth a migration — and `plugins/AGENTS.md` fixes the id for
-good, so there is no second rename for a shim to serve. Do not reintroduce one.
+— sequences written before it are not worth a migration — and the plugin conventions (mxm-kit's
+[`docs/plugin-conventions.md`](https://github.com/mxm-audio/mxm-kit/blob/main/docs/plugin-conventions.md#permanent-identifiers--never-change-these),
+*Permanent identifiers*) fix the id for good, so there is no second rename for a shim to serve. Do not reintroduce one.
 
 **Every path that touches a pattern has an answer.** A set that survives some of them and not others
 is the defect this table prevents:
@@ -1529,7 +1537,8 @@ Loopback only, and that is the boundary: an assistant runs on the same machine a
 Shipping the CLI opens nothing to the network.
 
 **And two things a person cannot do from the player, the CLI can**. `cc 119 <view>` and
-`cc 118 <0|127>` reach a loaded plugin's *developer channel* (`plugins/AGENTS.md`), which switches
+`cc 118 <0|127>` reach a loaded plugin's *developer channel* (mxm-kit's
+[`docs/plugin-conventions.md`](https://github.com/mxm-audio/mxm-kit/blob/main/docs/plugin-conventions.md#a-developer-channel-in-every-editor)), which switches
 the plugin editor's view or its expander — when the player was started from a shell with
 `MXM_DEV_CC` exported, because the plugin reads the environment it is instantiated in. Nothing in
 the player knows about it; the CC goes through the merge like any unmapped controller.
@@ -1744,7 +1753,7 @@ Vulkan and Metal. Both halves matter:
 
 - **A plugin editor renders through OpenGL in this same process and thread.** Two OpenGL painters
   share one global current-context and corrupt each other — the editor renders white, the player
-  fills with garbage. `docs/known-issues.md` has the diagnosis to the line.
+  fills with garbage. mxm-kit's [`docs/known-issues.md`](https://github.com/mxm-audio/mxm-kit/blob/main/docs/known-issues.md) has the diagnosis to the line.
 - **wgpu has its own GL backend**, so asking for wgpu is not by itself asking for something that is
   not OpenGL. Without the `Backends` restriction a fallback would restore the conflict with **no
   visible sign that anything had changed**, which is why `main.rs` also logs the adapter it actually
@@ -1785,7 +1794,8 @@ OpenGL anywhere in it. So:
   `MXM_SERVICE_MS` overrides it for diagnosis.
 - **The ordinary frame rate when no editor is open**, since nothing then shares the thread.
 
-**This was long attributed to the OpenGL contention and it is not that.** `docs/known-issues.md` has
+**This was long attributed to the OpenGL contention and it is not that.** mxm-kit's
+[`docs/known-issues.md`](https://github.com/mxm-audio/mxm-kit/blob/main/docs/known-issues.md) has
 both entries and the measurements that separate them. Repainting continuously does make the white
 editor constant, which is why the two were conflated — but it does so on Vulkan too.
 
@@ -1814,13 +1824,13 @@ and the editor's floor does not apply when no editor is shown.
 ### Floating resize stays inside the plugin's window
 
 `host.gui.request_resize` is for a parent's client area; the player's floating editors have none.
-The vendored nice-plug callback therefore accepts a floating resize locally rather than waking the
+The nice-plug fork's callback (vendored in the monorepo) therefore accepts a floating resize locally rather than waking the
 player and having `service_editor` echo it back. Embedded DAW editors still negotiate with their
 host. Do not compensate for this traffic by lowering `MXM_SERVICE_MS`: the unnecessary wake itself
 bypasses that cadence. The host's generic queued-request handling is unchanged.
 
-The collection's `editor_resize` (newdawn-workspace's `collection-tests/editor_resize.rs`, this repository's
-until the split into one repository per product) is an ignored Windows desktop regression against **all twenty shipped
+The collection's `editor_resize` (the local workspace's `collection-tests/editor_resize.rs`, not on
+GitHub yet; this repository's until the split into one repository per product) is an ignored Windows desktop regression against **all twenty shipped
 editors**, with no production settings or audio device: 24 native resizes per editor, repeated
 after close/reopen. A manifest-completeness oracle exposed mxm-bucket-delay's omission from the
 first nine-entry run. The last thirteen-entry Windows run (2026-09-11; mixed already-staged
@@ -1882,7 +1892,10 @@ belongs upstream.
 integration tests for that feature, and nothing else. A sequencer change does not re-test the synths,
 and a synth change does not re-test the sequencer. Everything after this table is the gate for
 merging into main, or for an explicit request: the twenty bundles, the editor sweeps, a bare
-`cargo test -p mxm-player` and clippy with `--all-targets`.
+`cargo test -p mxm-player` and clippy with `--all-targets`. *Since the split (2026-10-06):* there
+is no merge into main to gate; the gate below is run before a push or on request, on Windows and
+on Linux in WSL, and `editor_resize`, the sweep over all twenty bundles, is in the local
+workspace's `collection-tests/`.
 
 **Name as few integration files as the change reaches.** Each file in `tests/` is its own binary
 that links the whole app, so every file named costs a link, and that dominates the time. Filter
@@ -1893,7 +1906,11 @@ zero tests.
 test file changed. **A comment-only or format-only edit gets `rustfmt --check` on the file and no
 test run.**
 
-### The gate: merging into main, or on request
+### The gate: before a push, or on request
+
+*Since the split (2026-10-06):* this was the gate for merging into main, or on request. There is no
+merge gate now: run it before a push, on Windows and the same on Linux in WSL. CI runs it on all
+three platforms, but only on `v*` release tags or when started by hand (the owner, 2026-10-06).
 
 **The behaviour tests' measurements come from `mxm-measure`**, a dev-dependency: peak, RMS, channel
 de-interleave, note-to-hertz and a component's amplitude, which the six behaviour files each used to
@@ -1911,7 +1928,8 @@ cargo build -p nice-plug-output-fixture      # output allocation regression
 ```
 
 The collection's native resize regression, `editor_resize`, needs every product's bundle in one
-profile, so it lives in newdawn-workspace with the other collection tests (`collection-tests/`).
+profile, so it lives in the local workspace with the other collection tests (`collection-tests/`,
+not on GitHub yet).
 
 ```bash
 cargo xtask fixtures --release          # -> target/fixtures/mxm-fixtures.clap
@@ -1928,6 +1946,10 @@ skipped test is not a passing one — check the output.
 
 The matrix, and what each layer exists to prove:
 
+*Since the split (2026-10-06):* a `plugins/<plugin>/host-tests/…` row is in that product's own
+repository (`https://github.com/mxm-audio/<plugin>`) and runs there, after `cargo xtask bundle
+<plugin>` in that repository; the `collection-tests/` row is in the local workspace.
+
 **Three layers, each answering what the one below cannot.** Layer 1 bypasses the app entirely and
 always did; layers 2 and 3 exist because it does.
 
@@ -1940,12 +1962,12 @@ always did; layers 2 and 3 exist because it does.
 | 1 | `tests/p3_testable.rs` | Parameters with gestures, state round-trip, MIDI-out picker |
 | 1 | `tests/verification.rs` | Properties needing a misbehaving plugin, or a look at the audio thread |
 | 1 | `tests/wedged_subprocess.rs` | The terminal wedged path — must be a subprocess, since the fixture never returns from `process()` |
-| 1 | `tests/plugin_robustness.rs` | The pinned nice-plug robustness defects, fixed in [`vendor/nice-plug`](https://github.com/mxm-audio/nice-plug/blob/main/PATCHES.md) and still unfixed upstream, including guarded input/output queue floods; the input cases establish audibility before a 2,000-event hostile callback ends in either explicit release or mxm-para-07's zero-velocity NoteOn release. These stop a careless refresh from reintroducing them |
+| 1 | `tests/plugin_robustness.rs` | The pinned nice-plug robustness defects, fixed in [the nice-plug fork](https://github.com/mxm-audio/nice-plug/blob/main/PATCHES.md) and still unfixed upstream, including guarded input/output queue floods; the input cases establish audibility before a 2,000-event hostile callback ends in either explicit release or mxm-para-07's zero-velocity NoteOn release. These stop a careless refresh from reintroducing them |
 | 2 | `tests/t0_seams.rs` | The app builds and runs headlessly, in a sandbox, touching nothing outside it |
 | 2 | `tests/t1_oracles.rs` | The two oracles the UI layer rests on, each proven by falsification |
 | 2 | `tests/t2_regressions.rs` | One test per defect a human found by looking at the screen |
 | 2 | `tests/t7_editor.rs` | Floating-GUI advertisement and independent editor state headlessly, including mxm-fx-curve through the effect path; ignored native-window cases open, service, close and reopen covered editors, including mxm-mono-08 and mxm-fx-curve |
-| 2 | newdawn-workspace's `collection-tests/editor_resize.rs` | Every `bundler.toml` declaration appears exactly once across the editor and explicit-headless inventories; all twenty shipped floating editors, including mxm-fx-convolution, mxm-fx-delay, mxm-classic-verb, mxm-creative-sampler, mxm-drum-machine, mxm-para-07 and mxm-fx-curve, open, traverse 24 native Windows sizes without host resize round-trips, close and reopen. Run explicitly against complete debug and release editor inventories. The sampler's separate OS-file-drop gate is not implied by resizing |
+| 2 | the local workspace's `collection-tests/editor_resize.rs` (not on GitHub yet) | Every `bundler.toml` declaration appears exactly once across the editor and explicit-headless inventories; all twenty shipped floating editors, including mxm-fx-convolution, mxm-fx-delay, mxm-classic-verb, mxm-creative-sampler, mxm-drum-machine, mxm-para-07 and mxm-fx-curve, open, traverse 24 native Windows sizes without host resize round-trips, close and reopen. Run explicitly against complete debug and release editor inventories. The sampler's separate OS-file-drop gate is not implied by resizing |
 | 3 | `tests/t3_session.rs` | Deterministic sessions: byte-identical audio, and `load` while streaming completing promptly |
 | 3 | `plugins/mxm-mono-01/host-tests/tests/golden_audio.rs` | A fixed score still sounds the same **through the real app path** — mxm-mono-01 |
 | 3 | `plugins/mxm-poly-06/host-tests/tests/golden_audio.rs` | The same for mxm-poly-06, shipped with the instrument rather than after it |
@@ -2023,7 +2045,7 @@ production path; bundle helpers and tests may name products.
 
 The three-second wedge timer covers an outstanding Stop, not an ordinary-process watchdog. Capture
 the stop initiator, callback phase and thread stacks before attributing a timeout to plugin code;
-`plans/handover-2026-09-06-player-wedge.md` (`plans/handover-2026-09-06-player-wedge.md` in the private archive) owns
+`plans/handover-2026-09-06-player-wedge.md` (in the private archive) owns
 the unresolved incident.
 
 ### Auditioning a plugin here, with no window and no sound card

@@ -14,7 +14,8 @@
 //!
 //! **But nice-plug plugins do not report plain ranges.** They report `min_value = 0.0` and
 //! `max_value = step_count.unwrap_or(1)`
-//! (`vendor/nice-plug/src/wrapper/clap/wrapper.rs:3455-3459`), so a continuous parameter reaches
+//! (`src/wrapper/clap/wrapper.rs:3760-3764` in the nice-plug fork, mxm-audio/nice-plug; it was
+//! `vendor/nice-plug/…:3455-3459` in the monorepo), so a continuous parameter reaches
 //! the host as `0.0..=1.0` with the plugin's own skew applied inside. Mapping linearly across that
 //! **inherits the plugin's curve**, which is exactly what should happen — and a host-side log
 //! curve on top would double-apply it.

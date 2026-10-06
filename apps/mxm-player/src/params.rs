@@ -4,8 +4,8 @@
 //! value, formatted text. The panel draws from this; it never reaches into the plugin mid-frame.
 //!
 //! **After a player-initiated state load the panel requeries every parameter**, rather than
-//! waiting for a rescan callback. That is not belt-and-braces: `docs/known-issues.md` records
-//! that nice-plug 0.3.0 never issues `params.rescan(VALUES)` after a host state load, so a
+//! waiting for a rescan callback. That is not belt-and-braces: `docs/known-issues.md` in mxm-kit
+//! records that nice-plug 0.3.0 never issues `params.rescan(VALUES)` after a host state load, so a
 //! *correct* host that trusts the callback would show a stale panel with our own plugins.
 
 use clack_extensions::params::{ParamInfoBuffer, ParamInfoFlags, PluginParams};

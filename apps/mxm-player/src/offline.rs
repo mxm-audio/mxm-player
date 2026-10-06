@@ -597,9 +597,10 @@ fn adapt_channels(source: &[Vec<f32>], input: &mut [Vec<f32>], from: usize, n: u
 /// One scheduled event for an **effect**: parameter automation and nothing else.
 ///
 /// Separate from [`push_event`] because that one picks a note dialect from the plugin's note input
-/// port, and an effect has none — `plugins/AGENTS.md` says an effect carries no note port at all.
-/// Anything that is not a parameter change is dropped rather than guessed at: a note scheduled for
-/// an effect is a bug upstream, and inventing a port for it would hide that.
+/// port, and an effect has none — the plugin conventions (mxm-kit's `docs/plugin-conventions.md`,
+/// *A developer channel in every editor*; once `plugins/AGENTS.md`) say an effect carries no note
+/// port at all. Anything that is not a parameter change is dropped rather than guessed at: a note
+/// scheduled for an effect is a bug upstream, and inventing a port for it would hide that.
 fn push_effect_event(buffer: &mut EventBuffer, time: u32, kind: EventKind) {
     match kind {
         EventKind::ParamValue { param_id, value } => {

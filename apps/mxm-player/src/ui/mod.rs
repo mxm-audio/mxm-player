@@ -176,7 +176,7 @@ enum TieAction {
 /// it from the right edge would show a step joining the one *after* it, which is the opposite
 /// relationship.
 ///
-/// Duration moved to the merged button when ties landed — see `apps/mxm-player/AGENTS.md`'s
+/// Duration moved to the merged button when ties landed — see `apps/mxm-player/NOTES.md`'s
 /// *A step is a rest, a note, a hold or a slide* — so the bar's one job now is saying the step
 /// holds notes, centred over the number, half a cell wide.
 const STEP_MARKER_WIDTH: f32 = 0.5;
@@ -221,10 +221,10 @@ pub const MIN_SIZE: (f32, f32) = (REFERENCE_SIZE[0] * 0.75, REFERENCE_SIZE[1] * 
 
 /// Keyboard colours.
 ///
-/// `crates/ui` has landed, so the "placeholder until then" these once were is over — but they are
-/// deliberately **not** all tokens. A piano keyboard's white and black are the instrument, not the
-/// theme: they stay the same in dark and light, because a keyboard that inverted would stop being
-/// a keyboard.
+/// `crates/ui` (mxm-kit's `mxm-ui`) has landed, so the "placeholder until then" these once were is
+/// over — but they are deliberately **not** all tokens. A piano keyboard's white and black are the
+/// instrument, not the theme: they stay the same in dark and light, because a keyboard that
+/// inverted would stop being a keyboard.
 ///
 /// The state colours below are a different case and **should** move to tokens — `HELD_KEY` is
 /// `mod-performance`, `SELECTED_KEY` is close to `mod-lfo`, and `KEY_LABEL` and `KEY_BORDER` are
@@ -3080,8 +3080,8 @@ impl PlayerApp {
     /// `apply_mapped_cc`, and the plugin's own editor, whose knob turns reach the player as
     /// `PluginOutput::ParamValue`. Leaving any of them out would mean sequencing worked in some
     /// places and silently did nothing in others, which is the shape of defect
-    /// `apps/mxm-player/AGENTS.md`'s *"whatever the note keys do, a MIDI keyboard does too"* rule was
-    /// written about.
+    /// `apps/mxm-player/NOTES.md`'s *"whatever the note keys do, a MIDI keyboard does too"* rule
+    /// was written about.
     ///
     /// **The value is still sent to the plugin.** You hear what you are setting, exactly as playing
     /// a note into a selected step sounds it.
@@ -4058,7 +4058,7 @@ impl PlayerApp {
     /// **Nothing here is guarded, and nothing else is touched.** Two guards used to live in this
     /// funnel — *a slide needs a head*, and *the head is protected while a slide continues it* —
     /// along with a repair that untied whatever a deletion had stranded. All three are gone with
-    /// the tie invariant they served (the owner's ruling; see `apps/mxm-player/AGENTS.md`, *Ties
+    /// the tie invariant they served (the owner's ruling; see `apps/mxm-player/NOTES.md`, *Ties
     /// and notes are independent*): a tie reaching no note is a run with nothing to hold yet,
     /// which the runtime already plays as silence until a note arrives. So a note lands wherever
     /// it is played, a note leaves whenever it is deleted, and the ties around it are left as the
@@ -4887,8 +4887,8 @@ impl PlayerApp {
     /// plugin's default patch rather than the sound being listened to. Live playback is untouched.
     ///
     /// Capturing state is a synchronous call into the plugin, so a plugin that hangs there hangs
-    /// the interface. That is inherited, not introduced: `AGENTS.md` records that no in-process
-    /// timeout recovers it.
+    /// the interface. That is inherited, not introduced: `NOTES.md` (*Fault isolation is partial*)
+    /// records that no in-process timeout recovers it.
     pub fn export_audio(&mut self, name: &str) -> Result<PathBuf, String> {
         let Some(plugin_id) = self.engine.plugin_id().map(str::to_owned) else {
             return Err("load a plugin before exporting audio".to_owned());
@@ -5738,8 +5738,9 @@ impl eframe::App for PlayerApp {
         //
         // - `request_repaint()` every frame leaves the event loop no idle time, the editor's
         //   messages are never dispatched, and **it renders white**. This is the symptom
-        //   `docs/known-issues.md` attributed to two OpenGL painters sharing a context; it
-        //   reproduces with the player on Vulkan, so that diagnosis is not the whole story.
+        //   `docs/known-issues.md` (in mxm-kit) attributed to two OpenGL painters sharing a
+        //   context; it reproduces with the player on Vulkan, so that diagnosis is not the whole
+        //   story.
         // - Repainting only reactively is the opposite failure: the thread cycles rarely, the
         //   editor gets few chances, and its interface feels sluggish.
         //
@@ -6625,8 +6626,9 @@ impl PlayerApp {
                                 format!("Editing step {} — {next_click}, Esc to stop.", step + 1)
                             };
                             // A token, not a literal: this was a hard-coded amber, which is the escape
-                            // `crates/ui/AGENTS.md` names — *a colour chosen in a panel is a token that
-                            // has escaped*. Editing is a mode, and `warning` is the mode colour.
+                            // `crates/ui/AGENTS.md` (in mxm-kit) names — *a colour chosen in a
+                            // panel is a token that has escaped*. Editing is a mode, and `warning`
+                            // is the mode colour.
                             ui.colored_label(adapter::tokens_for(ui).warning, text);
                         }
                         None => {

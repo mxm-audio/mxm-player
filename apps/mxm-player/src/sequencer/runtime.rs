@@ -1972,7 +1972,7 @@ mod tests {
     #[test]
     fn a_run_of_ties_sounds_nothing_until_a_note_lands_in_it_and_is_legato_after() {
         // **The contract the editor's guards used to hold, now held here** — the owner's ruling
-        // that ties and notes are independent (`apps/mxm-player/AGENTS.md`, *Ties and notes are
+        // that ties and notes are independent (`apps/mxm-player/NOTES.md`, *Ties and notes are
         // independent*). Nothing refuses a tie over a rest any more, so what such a pattern
         // *means* has to be pinned where it is decided: the runtime.
         //

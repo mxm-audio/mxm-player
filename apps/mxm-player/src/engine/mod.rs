@@ -451,7 +451,7 @@ impl Engine {
     ///
     /// A **synchronous call into the plugin**, on the GUI thread, which allocates. That is why it
     /// cannot happen on the audio thread — and why a plugin that hangs here hangs the interface,
-    /// which `AGENTS.md` records as unrecoverable in-process.
+    /// which `NOTES.md` (*Fault isolation is partial*) records as unrecoverable in-process.
     pub fn capture_state(&mut self) -> Result<Vec<u8>, String> {
         let loaded = self
             .loaded

@@ -457,7 +457,8 @@ fn a_missing_user_file_is_the_ordinary_case_and_not_an_error() {
 fn a_nice_plug_parameter_reaches_the_host_normalised_so_the_plugin_keeps_its_own_curve() {
     // Worth pinning, because it decides what the curve system is *for*. nice-plug reports
     // `min_value = 0.0` and `max_value = step_count.unwrap_or(1)`
-    // (vendor/nice-plug/src/wrapper/clap/wrapper.rs:3455-3459), so a continuous parameter arrives
+    // (`src/wrapper/clap/wrapper.rs:3760-3764` in the nice-plug fork, mxm-audio/nice-plug; it was
+    // `vendor/nice-plug/…:3455-3459` in the monorepo), so a continuous parameter arrives
     // as 0..1 and the plugin applies its own skew inside. Mapping linearly across that therefore
     // *inherits* the plugin's curve, and a host-side log curve on top would double-apply it.
     //
