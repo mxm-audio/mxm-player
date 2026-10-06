@@ -4,6 +4,12 @@
 //! its `PATCHES.md`; `vendor/nice-plug` in the monorepo), and all four are still present upstream
 //! — so these tests are what stops a careless refresh of the fork from silently reintroducing them.
 //!
+//! *nice-plug 0.4.2 (2026-10-06):* "still present upstream" described 0.3.0. 0.4.2 fixes the rescan
+//! and the non-finite value itself, bounds the state length itself, and has no wrapper output
+//! queue, so the output case below now proves 0.4's direct `try_send_event()` instead. The fork's
+//! `PATCHES.md` has each patch's status. The tests stay: they prove that what replaced a patch
+//! still behaves.
+//!
 //! The allocation and hostile-state cases run in a subprocess, because unpatched they end in
 //! `handle_alloc_error` — an abort, which no in-process assertion can catch.
 
@@ -40,7 +46,8 @@ fn guarded_debug_plugin(binary_name: &str, package_name: &str) -> PathBuf {
 }
 
 /// The output-side regression must use a nice-plug plugin: the clack fixture emitter bypasses the
-/// wrapper whose `ProcessContext::send_event()` guard is under test.
+/// wrapper whose `ProcessContext::try_send_event()` is under test (`send_event()` and its MXM
+/// guard until nice-plug 0.4.2).
 fn guarded_debug_output_fixture() -> PathBuf {
     let binary = workspace_root().join("target").join("debug").join(format!(
         "{}nice_plug_output_fixture{}",
@@ -116,21 +123,30 @@ fn more_events_than_the_configured_wrapper_capacity_do_not_allocate_or_abort() {
     );
 }
 
-/// Establishes an audible note in one callback, then sends 2,000 ordinary events plus its release
+/// Establishes an audible note in one callback, then sends 2,500 ordinary events plus its release
 /// into the next callback. The wrapper was activated for 64 frames, so its queue and each raw-event
-/// inspection window are 512: this hostile list is nearly four times either bound and cannot be
-/// mistaken for the old 513th-push threshold. The note sounds before saturation, so subsequent
-/// silence can only demonstrate an admitted termination, not eviction of the note-on that would
-/// have established it. This loads the guarded debug binary directly as above.
+/// inspection window are 1,024: 512 for the frames plus one per parameter, raised to the floor of
+/// nice-plug 0.4.2's `Plugin::INPUT_EVENT_CAPACITY`. This hostile list is more than twice that, so
+/// the wrapper skips its middle, and it cannot be mistaken for the old 513th-push threshold. The
+/// note sounds before saturation, so subsequent silence can only demonstrate an admitted
+/// termination, not eviction of the note-on that would have established it. This loads the guarded
+/// debug binary directly as above.
+///
+/// *Before nice-plug 0.4.2* the window was 512 and 2,000 events were nearly four times it. 2,000
+/// no longer reach twice 1,024. The player's own input list cannot carry four times 1,024 in one
+/// callback, and its overflow would invoke global recovery instead of delivering the list, so the
+/// count is 2,500 and the epoch check below makes sure the player delivered every event.
 fn dense_events_child() {
-    const HOSTILE_EVENT_COUNT: usize = 2_000;
+    const HOSTILE_EVENT_COUNT: usize = 2_500;
+    // 126 non-termination CC numbers on each of 16 channels.
+    const DISTINCT_CONTROLLERS: usize = 126 * 16;
 
     let bundle = guarded_debug_mxm_mono_01();
-    let mut h = harness::Harness::with_max_frames(&bundle, "dk.mxm.mxm-mono-01", 2, 64)
+    let mut h = harness::Harness::with_max_frames(&bundle, "dk.mxm.mxm-mono-01", 3, 64)
         .expect("mxm-mono-01 hosts");
     h.render(64);
 
-    use mxm_player::events::input::Payload;
+    use mxm_player::events::input::{PRODUCER_QUEUE_CAPACITY, Payload};
     assert!(h.push(
         0,
         Payload::NoteOn {
@@ -145,37 +161,61 @@ fn dense_events_child() {
         "the target note must already be admitted and audible before the hostile callback"
     );
 
-    // There are 126 non-termination CC numbers on each of 16 channels, enough to keep all 2,000
-    // events distinct so the host does not coalesce the flood before nice-plug sees it.
+    // The host coalesces a controller moved twice at one sample offset, so each event must be a
+    // distinct controller at its offset or the flood shrinks before nice-plug sees it. The CC
+    // numbers give 2,016 distinct controllers, not enough for one offset, so the arrival is
+    // stamped explicitly: the first round arrives before the previous callback began and lands on
+    // frame 0, the rest after this callback began and land on the last frame.
+    //
+    // *Before nice-plug 0.4.2* all 2,000 fitted one round and were pushed at the clock's time.
+    let late = 0;
+    let newest = u64::MAX - 1;
     for i in 0..HOSTILE_EVENT_COUNT {
-        let ordinal = (i % 126) as u8;
+        let pair = i % DISTINCT_CONTROLLERS;
+        let ordinal = (pair % 126) as u8;
         let controller = match ordinal {
             0..=119 => ordinal,
             120..=121 => ordinal + 1,
             _ => ordinal + 2,
         };
-        // Leave one slot on the note's own source for its release. Source identity is part of the
-        // player's press ledger, so releasing from the other producer would correctly match
-        // nothing and make this regression useless in a different way.
-        let source = usize::from(i >= 1023);
-        assert!(h.push(
+        // Fill each producer's queue in turn, but leave one slot on the note's own source for its
+        // release. Source identity is part of the player's press ledger, so releasing from another
+        // producer would correctly match nothing and make this regression useless in a different
+        // way.
+        let source = (i + 1) / PRODUCER_QUEUE_CAPACITY;
+        let arrival = if i < DISTINCT_CONTROLLERS {
+            late
+        } else {
+            newest
+        };
+        assert!(h.push_at(
             source,
+            arrival,
             Payload::ControlChange {
-                channel: (i / 126) as u8,
+                channel: (pair / 126) as u8,
                 controller,
                 value: (i % 128) as u8,
             },
         ));
     }
-    assert!(h.push(
+    // After every hostile event, on the last frame.
+    assert!(h.push_at(
         0,
+        u64::MAX,
         Payload::NoteOff {
             channel: 0,
             key: 60,
             velocity: 0.0,
         },
     ));
+    let epoch = h.input_epoch.current();
     h.render(64);
+    assert_eq!(
+        h.input_epoch.current(),
+        epoch,
+        "the player must deliver the whole hostile list: its own global recovery would silence \
+         the note and prove nothing about the wrapper"
+    );
     // The init patch has a real release tail. Let that finish, then distinguish a delivered
     // NoteOff from the indefinitely sounding note that a dropped release leaves behind.
     for _ in 0..1_600 {
@@ -199,7 +239,9 @@ fn a_zero_velocity_note_on_after_input_saturation_still_terminates_the_note() {
     use mxm_player::offline::{EventKind, RenderConfig, ScheduledEvent, render};
 
     const BLOCK: u32 = 64;
-    const HOSTILE_EVENT_COUNT: usize = 2_000;
+    // Nearly four times the wrapper's 1,024-event window, so its middle is skipped. 2,000 until
+    // nice-plug 0.4.2, when the window was 512.
+    const HOSTILE_EVENT_COUNT: usize = 4_000;
     const RELEASE_FRAME: u64 = BLOCK as u64;
     const NOTE_ID: u32 = 7;
     const NOTE: u16 = 60;
@@ -236,10 +278,11 @@ fn a_zero_velocity_note_on_after_input_saturation_still_terminates_the_note() {
     });
 
     // The target note is established in the first callback. The next callback fills the wrapper's
-    // 512-event queue with ordinary input before the zero-velocity NoteOn arrives at the end of the
-    // bounded suffix. mxm-para-07 treats that event as NoteOff, so it must survive saturation just
-    // like an explicit NoteOff. Enough later callbacks are rendered for the real release tail to
-    // settle to the instrument's exact inert silence.
+    // queue with ordinary input before the zero-velocity NoteOn arrives at the end of the bounded
+    // suffix. That queue holds 1,024 events since nice-plug 0.4.2, `Plugin::INPUT_EVENT_CAPACITY`'s
+    // floor (512 before). mxm-para-07 treats that event as NoteOff, so it must survive saturation
+    // just like an explicit NoteOff. Enough later callbacks are rendered for the real release tail
+    // to settle to the instrument's exact inert silence.
     let result = render(
         &bundle,
         "dk.mxm.mxm-para-07",
@@ -282,40 +325,68 @@ fn more_output_events_than_the_configured_wrapper_capacity_do_not_allocate_or_ab
         "dense-output-events",
     )
     .expect(
-        "a nice-plug plugin must not grow its output queue when it emits more events than the configured bound",
+        "a nice-plug plugin must not allocate when it fills the host's output-event list, and a \
+         termination the full list refused must reach the host in the next call",
     );
 }
 
-/// The fixture emits 1000 note-ons through nice-plug after activation for 64 frames, followed by
-/// the note-off for a distinct note admitted near the end of the bounded prefix. The wrapper's
-/// configured bound is 513: 64 frames × 8 events plus one exposed parameter. The guarded path drops
-/// ordinary overflow but displaces one ordinary event for the termination, while the unguarded
-/// `push_back` reallocates past its original 512-event storage under `assert_process_allocs`.
+/// **Since nice-plug 0.4.2 the wrapper has no output queue**, so the "configured wrapper capacity"
+/// of this test's name no longer exists. The name is kept because mxm-kit's `docs/known-issues.md`
+/// cites it. `try_send_event()` pushes straight into the host's output list, which here is the
+/// player's fixed sink (`events::output::FixedEventBuffer`). That sink is the only bound: when it
+/// refuses an event, the wrapper returns `SendEventError::HostBufferFull` and hands the event back.
+///
+/// The fixture sends its distinct note-on into the empty list, then ordinary note-ons until the
+/// sink refuses one, then the distinct note's note-off. A CLAP output list is append-only, so
+/// nothing can make room for the note-off in that call. The wrapper reports the refusal, and the
+/// fixture sends the note-off first in its next call. So a termination after saturation still
+/// reaches the host, one call later and only because the refusal was reported. All of it runs under
+/// `assert_process_allocs`.
+///
+/// *Before nice-plug 0.4.2:* the fixture sent 1000 note-ons through `send_event()` after
+/// activation for 64 frames, then the note-off for a distinct note admitted near the end of the
+/// bounded prefix. The wrapper's configured bound was 513: 64 frames × 8 events plus one exposed
+/// parameter. Its guarded path dropped ordinary overflow but displaced one ordinary event for the
+/// termination, so exactly 513 events arrived in the same call, the note-off among them. The
+/// unguarded `push_back` reallocated past its original 512-event storage under
+/// `assert_process_allocs`.
 fn dense_output_events_child() {
+    use mxm_player::engine::PluginOutput;
+    use mxm_player::midi::{is_press, is_release};
+
     let bundle = guarded_debug_output_fixture();
     let mut h =
         harness::Harness::with_max_frames(&bundle, "dk.mxm.fixture.nice-plug-output-flood", 1, 64)
             .expect("the nice-plug output fixture hosts");
 
     h.render(64);
-    let events = h.drain_midi_out();
-    assert_eq!(
-        events.len(),
-        513,
-        "the wrapper must keep exactly its configured output-event capacity"
+    let saturated = h.drain_midi_out();
+    assert!(
+        h.drain_plugin_output()
+            .contains(&PluginOutput::TrackingInvalidated),
+        "the player's own output sink must be what refused the flood; nothing between the plugin \
+         and the host may bound it first"
+    );
+    assert!(
+        saturated
+            .first()
+            .is_some_and(|event| event.data[1] == 61 && is_press(event.data)),
+        "the distinct note-on, sent into the empty list, must reach the host first"
+    );
+    assert!(
+        !saturated
+            .iter()
+            .any(|event| event.data[1] == 61 && is_release(event.data)),
+        "a full output list cannot take the termination in the same call"
     );
 
-    let admitted = events
-        .iter()
-        .position(|event| event.data[1] == 61 && mxm_player::midi::is_press(event.data))
-        .expect("the distinct note-on inside the configured capacity must reach the host");
-    let terminated = events
-        .iter()
-        .position(|event| event.data[1] == 61 && mxm_player::midi::is_release(event.data))
-        .expect("the distinct note's post-saturation termination must reach the host");
+    h.render(64);
+    let next = h.drain_midi_out();
     assert!(
-        admitted < terminated,
-        "the admitted note must reach the host before its termination"
+        next.first()
+            .is_some_and(|event| event.data[1] == 61 && is_release(event.data)),
+        "the termination the full list refused must come back to the plugin with HostBufferFull \
+         and reach the host first in its next call"
     );
 
     h.shutdown();

@@ -19,5 +19,29 @@ mxm-player.workspace = true
 egui = "=0.36.1"
 egui_kittest = { version = "=0.36.1", features = ["eframe"] }
 clack-host = "=0.1.1"
-clack-extensions = { version = "=0.1.1", default-features = false, features = ["clack-host", "tail"] }
+clack-extensions = { version = "=0.1.1", default-features = false, features = ["clack-host", "tail", "gui"] }
 rtrb = "=0.3.5"
+
+# The `embedded_resize` example opens a real AppKit window to embed an editor the way a DAW does on
+# macOS. The versions winit and baseview already bring in, with only the AppKit and Foundation
+# features it uses, so no new package enters the lock.
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+objc2 = "=0.6.4"
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = [
+    "std",
+    "objc2-core-foundation",
+    "NSApplication",
+    "NSGraphics",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSView",
+    "NSWindow",
+] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = [
+    "std",
+    "objc2-core-foundation",
+    "NSArray",
+    "NSDate",
+    "NSGeometry",
+    "NSRunLoop",
+] }

@@ -205,14 +205,28 @@ Because the failure only appears past a threshold, the allocation tests must inc
 buffer, not only a sparse one — see `tests/verification.rs`. The wrapper-overflow regressions in
 `tests/plugin_robustness.rs` directly load `target/debug` binaries, where nice-plug's
 `assert_process_allocs` is compiled in: mxm-mono-01 first sounds its target in one callback, then
-puts 2,000 ordinary events and that target's explicit release in the next; mxm-para-07 independently
-ends the saturated callback with a zero-velocity NoteOn carrying the prior callback's note id, which
-its event contract interprets as NoteOff. The dedicated nice-plug output fixture floods
-`ProcessContext::send_event` and terminates its separately admitted note. Thus silence/output proves
+puts `HOSTILE_EVENT_COUNT` ordinary events and that target's explicit release in the next;
+mxm-para-07 independently ends a saturated callback of its own `HOSTILE_EVENT_COUNT` with a
+zero-velocity NoteOn carrying the prior callback's note id, which its event contract interprets as
+NoteOff. Each count exceeds twice the wrapper's input window, so its skipped-middle path runs.
+mxm-mono-01's list goes through the player's own input arena (`FixedEventBuffer`), which cannot
+carry four windows in one callback, so its count is lower than mxm-para-07's raw offline list. It is
+stamped onto two sample offsets so the player's same-offset coalescing cannot shrink it, and the test
+checks the player raised no panic epoch: its own global recovery would silence the note and prove
+nothing. The dedicated nice-plug output fixture fills the player's output sink through
+`ProcessContext::try_send_event`; its note-off, refused by the full sink, comes back with
+`HostBufferFull` and reaches the host first in the next call. Thus silence/output proves
 termination rather than eviction of a same-queue note-on. The nice-plug fork's unit test (the
 monorepo's vendored copy) separately proves a million reported inputs select only two
 capacity-sized windows. They fail if either artifact is absent rather than silently accepting an ordinary unguarded release
 build.
+
+*Before nice-plug 0.4.2 (2026-10-06):* the input window was 512, and each input case sent 2,000
+ordinary events, nearly four times it. 0.4.2 raises the window's floor to
+`Plugin::INPUT_EVENT_CAPACITY` (1,024 then), so 2,000 no longer reached twice it; the counts became
+2,500 (mxm-mono-01) and 4,000 (mxm-para-07). The output fixture flooded `ProcessContext::send_event`
+into the wrapper's bounded output queue, and exactly 513 events reached the host in the same call,
+the termination among them. 0.4 has no wrapper output queue and no `send_event`.
 
 ### One clock, and it is read on the audio thread
 
@@ -1961,7 +1975,7 @@ always did; layers 2 and 3 exist because it does.
 | 1 | `tests/p3_testable.rs` | Parameters with gestures, state round-trip, MIDI-out picker |
 | 1 | `tests/verification.rs` | Properties needing a misbehaving plugin, or a look at the audio thread |
 | 1 | `tests/wedged_subprocess.rs` | The terminal wedged path — must be a subprocess, since the fixture never returns from `process()` |
-| 1 | `tests/plugin_robustness.rs` | The pinned nice-plug robustness defects, fixed in [the nice-plug fork](https://github.com/mxm-audio/nice-plug/blob/main/PATCHES.md) and still unfixed upstream, including guarded input/output queue floods; the input cases establish audibility before a 2,000-event hostile callback ends in either explicit release or mxm-para-07's zero-velocity NoteOn release. These stop a careless refresh from reintroducing them |
+| 1 | `tests/plugin_robustness.rs` | The pinned nice-plug robustness defects, fixed in [the nice-plug fork](https://github.com/mxm-audio/nice-plug/blob/main/PATCHES.md), some since fixed upstream too, including the guarded input-queue flood and the output flood; the input cases establish audibility before a hostile callback of more than twice the wrapper's input window ends in either explicit release or mxm-para-07's zero-velocity NoteOn release; the output case fills the player's sink through `try_send_event` and requires the refused termination to arrive in the next call. These stop a careless refresh from reintroducing them. *(Until nice-plug 0.4.2, 2026-10-06: "still unfixed upstream", "guarded input/output queue floods" and a 2,000-event hostile callback.)* |
 | 2 | `tests/t0_seams.rs` | The app builds and runs headlessly, in a sandbox, touching nothing outside it |
 | 2 | `tests/t1_oracles.rs` | The two oracles the UI layer rests on, each proven by falsification |
 | 2 | `tests/t2_regressions.rs` | One test per defect a human found by looking at the screen |

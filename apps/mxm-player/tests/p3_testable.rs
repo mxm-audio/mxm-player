@@ -130,6 +130,9 @@ fn a_parameter_change_reaches_the_plugin_with_its_gesture_intact() {
 fn a_preset_round_trips_and_the_panel_is_requeried_afterwards() {
     // Requerying is not belt-and-braces: nice-plug never issues `params.rescan(VALUES)` after a
     // host state load, so a host that trusted the callback would show a stale panel.
+    // *(That was nice-plug 0.3.0 as published. 0.4.2 rescans after a successful load, and the MXM
+    // fork after every completed one; the requery stays, because the player does not rely on the
+    // callback.)*
     let Some(bundle) = harness::mxm_mono_01() else {
         return;
     };

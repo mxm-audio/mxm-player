@@ -17,7 +17,9 @@ hosting is proved against, precisely because it shares no code with the collecti
 # Ownership
 
 Owns the clack fixture factory in `src/{lib.rs, fixture.rs, spec.rs}` and `Cargo.toml`, plus the
-nested `nice-plug-output/` package used only to exercise nice-plug's own output queue.
+nested `nice-plug-output/` package used only to exercise nice-plug's own output path,
+`ProcessContext::try_send_event()`. *(Until nice-plug 0.4.2 (2026-10-06) that was the wrapper's
+output queue, which 0.4 removed.)*
 
 Consumed by [`apps/mxm-player`](../../apps/mxm-player/AGENTS.md); built and staged by
 [`xtask`](../../xtask/AGENTS.md).
@@ -77,6 +79,8 @@ a feature.
 ## MSRV
 
 1.87, declared on `[package]` — no GUI dependencies. It belongs on the package, not under `[lib]`.
+`nice-plug-output/` declares nice-plug 0.4.2's own floor, 1.88, the same way. *(1.87 until it
+moved to nice-plug 0.4.2, 2026-10-06.)*
 
 # Work Guidance
 
@@ -88,11 +92,18 @@ A fixture that reads its input must not go through the zero-fill the others shar
 skips it for `Behaviour::Effect` because a zero-fill destroys the input when the host processes in
 place. Read each input sample into a local before writing its output, for the same reason.
 
-The nice-plug output fixture stays minimal and emits beyond the wrapper's configured capacity only
-through `ProcessContext::send_event`. A distinct note-on admitted before saturation is followed by
-its note-off after saturation, so the host regression proves terminations displace ordinary output
-instead of sticking the note. Build it in debug: the production allocation guard is compiled out in
-release.
+The nice-plug output fixture stays minimal and emits only through
+`ProcessContext::try_send_event`, until the host's own output list refuses an event: since nice-plug
+0.4.2 the wrapper has no queue of its own, so the host's list is the only bound. A distinct note-on
+sent into the empty list is followed by its note-off after saturation. The full list refuses it, the
+wrapper hands it back with `SendEventError::HostBufferFull`, and the fixture sends it first in its
+next process call. So the host regression proves a refused termination comes back and still arrives,
+one call later, instead of sticking the note. Build it in debug: the production allocation guard is
+compiled out in release.
+
+*Before nice-plug 0.4.2 (2026-10-06):* the fixture emitted beyond the wrapper's configured capacity
+through `ProcessContext::send_event`, and the regression proved terminations displaced ordinary
+output in the same call. 0.4 removed that queue and `send_event` with it.
 
 # Verification
 
