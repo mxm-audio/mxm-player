@@ -99,6 +99,10 @@ Child DOX Index
 
 **mxm-player** is MXM Player, the CLAP host that plays, sequences and tests the MXM instruments and effects.
 
+**No new features** (the owner, 2026-10-07: "All player work now goes into the daw"). Playing,
+sequencing and hosting work belongs in newDAWn. This repository stays as the host the plugins'
+`host-tests` and the collection checks run in: fix what those need, nothing more.
+
 It is one of the MXM products, each in its own repository under
 [github.com/mxm-audio](https://github.com/mxm-audio), built on the MIT-licensed
 [mxm-kit](https://github.com/mxm-audio/mxm-kit) — the design system, keyboard navigation, presets,
