@@ -42,7 +42,7 @@ Update the closest owning AGENTS.md when a change affects:
 - AGENTS.md creation, deletion, move, rename, or index contents
 
 Update parent docs when parent-level structure, ownership, workflow, or child index changes. Update
-child docs when parent changes alter local rules. Correct stale or contradictory text immediately, and move its history to `NOTES.md` rather than deleting it.
+child docs when parent changes alter local rules. Correct stale or contradictory text immediately, and move its history to `NOTES.md` rather than deleting it; a discarded idea or replaced design is deleted outright, not archived: git keeps it (the owner, 2026-10-08).
 Small edits that do not change behavior or contracts may leave docs unchanged, but the DOX pass
 still must happen.
 
@@ -78,7 +78,8 @@ Child DOX Index
 - Put broad rules in parent docs and concrete details in child docs
 - Prefer direct bullets with explicit names
 - Do not duplicate rules across many files unless each scope needs a local version
-- Keep AGENTS.md current: correct a stale note and move its history to `NOTES.md` instead of explaining it here
+- Keep AGENTS.md current: correct a stale note and move its history to `NOTES.md` instead of explaining it here;
+  a discarded idea is deleted, never kept as history
 - Trim obvious statements, repeated rules, misplaced detail, and warnings for risks that no longer
   exist
 
@@ -87,7 +88,8 @@ Child DOX Index
 1. Re-check changed paths against the DOX chain
 2. Update nearest owning docs and any affected parents or children
 3. Refresh every affected Child DOX Index
-4. Correct stale or contradictory text; move history to `NOTES.md`, never delete it
+4. Correct stale or contradictory text; move the reasoning still in force to `NOTES.md`, and delete a
+   discarded idea outright
 5. Run existing verification when relevant
 6. Report any docs intentionally left unchanged and why
 
