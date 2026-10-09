@@ -8,6 +8,7 @@
 pub mod adapter;
 mod fx_rail;
 pub mod keyboard;
+mod plugin_menu;
 
 use crate::config::PlayerConfig;
 use crate::control_map::{CcMask, ControlMap};
@@ -267,6 +268,7 @@ pub struct PlayerApp {
 
     found: Vec<Found>,
     cache: ScanCache,
+    scan_cache_path: Option<PathBuf>,
     sentinel: Sentinel,
     /// Where discovery looks. `None` means the standard locations.
     search_paths: Option<Vec<PathBuf>>,
@@ -1547,6 +1549,7 @@ impl PlayerApp {
             backend,
             settings_path,
             sentinel_path,
+            scan_cache_path,
             control_map_path,
             sequence_dir,
             exports_dir,
@@ -1634,7 +1637,11 @@ impl PlayerApp {
             settings,
             settings_path,
             found: Vec::new(),
-            cache: ScanCache::default(),
+            cache: scan_cache_path
+                .as_deref()
+                .map(ScanCache::load)
+                .unwrap_or_default(),
+            scan_cache_path,
             sentinel,
             suspected,
             params: ParamSet::default(),
@@ -1719,12 +1726,11 @@ impl PlayerApp {
     /// **Refusals do not disappear, they move.** `src/envelope.rs`'s contract is that everything
     /// outside the v1 envelope is refused *with the reason shown*, because that is what keeps
     /// third-party readiness honest without third-party plugins to test against; a refusal without a
-    /// reason is a bug. So the unloadable ones sit below a separator, disabled, each carrying its own
-    /// reason — out of the way of the choice, still answering "why can I not load this?".
+    /// reason is a bug. So the unloadable ones sit in a submenu at the foot, disabled, each carrying
+    /// its own reason: out of the way of the choice, still answering "why can I not load this?".
+    /// The menu's layout, columns and search are `plugin_menu`'s, shared with the effect picker.
     fn plugin_picker(&mut self, ui: &mut egui::Ui) {
-        let duplicates = crate::discovery::duplicated_ids(&self.found);
-        let loadable: Vec<_> = self.found.iter().filter(|f| f.is_supported()).collect();
-        let refused: Vec<_> = self.found.iter().filter(|f| !f.is_supported()).collect();
+        let loadable = self.found.iter().any(Found::is_supported);
 
         // The button says what is loaded, so the bar answers "which plugin is this?" at a glance.
         // The engine knows only the CLAP id, so the display name comes from the scan that offered
@@ -1736,53 +1742,39 @@ impl PlayerApp {
                 .iter()
                 .find(|f| &f.id == id)
                 .map_or_else(|| id.clone(), |f| f.name.clone()),
-            None if loadable.is_empty() => "No plugin".to_owned(),
+            None if !loadable => "No plugin".to_owned(),
             None => "Load plugin".to_owned(),
         };
 
         let mut to_load = None;
         let mut rescan = false;
 
-        ui.menu_button(format!("{label} ⏷"), |ui| {
-            if loadable.is_empty() {
-                ui.weak("Nothing here can be loaded.");
-            }
-            for found in &loadable {
-                // Two bundles with one id are two builds of the same plugin, and one is usually
-                // stale. The location is the only thing that tells them apart, so it is shown for
-                // exactly that case rather than for every row.
-                let text = if duplicates.contains(&found.id) {
-                    format!("{}  ·  {}", found.name, found.location())
-                } else {
-                    found.name.clone()
-                };
-                if ui.button(text).on_hover_text(found.hover()).clicked() {
-                    to_load = Some((found.bundle.clone(), found.id.clone()));
-                    ui.close();
-                }
-            }
-
-            ui.separator();
-            if ui.button("Rescan").clicked() {
-                rescan = true;
-                ui.close();
-            }
-
-            if !refused.is_empty() {
-                ui.separator();
-                ui.weak(format!("{} cannot be loaded", refused.len()));
-                for found in &refused {
-                    let row = ui.add_enabled(false, egui::Button::new(&found.name));
-                    if let Some(reason) = found.refusal_reason() {
-                        row.on_disabled_hover_text(format!("{}
-{reason}", found.location()));
+        let menu = ui.menu_button(format!("{label} ⏷"), |ui| {
+            to_load = plugin_menu::contents(
+                ui,
+                "source",
+                &self.found,
+                Found::is_supported,
+                Found::refusal_reason,
+                &plugin_menu::Words {
+                    nothing: "Nothing here can be loaded.",
+                    refused: "cannot be loaded",
+                },
+                |ui| {
+                    ui.separator();
+                    if ui.button("Rescan").clicked() {
+                        rescan = true;
+                        ui.close();
                     }
-                }
-            }
-        })
-        .response
-        .on_hover_text(
-            "Load a plugin. Here rather than in the settings panel so it is reachable with that              panel collapsed, which is how the player is used beside a plugin's own interface.",
+                },
+            );
+        });
+        if menu.inner.is_none() {
+            plugin_menu::forget_search(ui.ctx(), "source");
+        }
+        menu.response.on_hover_text(
+            "Load a plugin. Here rather than in the settings panel so it is reachable with that \
+             panel collapsed, which is how the player is used beside a plugin's own interface.",
         );
 
         if rescan {
@@ -2408,6 +2400,10 @@ impl PlayerApp {
         }
     }
 
+    /// The scan at start, and the Rescan button's and the `rescan` verb's. With a scan cache it
+    /// reads unchanged bundles from it and enters only new and changed ones; removed ones leave
+    /// (the owner, 2026-10-09: scanning "should only happen on startup or manual rescan").
+    ///
     /// Scanning executes arbitrary code, so it runs only with audio stopped — which is also what
     /// makes the sentinel meaningful, since no other plugin is then executing concurrently.
     pub fn rescan(&mut self) {
@@ -2429,13 +2425,30 @@ impl PlayerApp {
         self.control_map_problems.clear();
 
         let roots = self.search_paths.clone().unwrap_or_else(search_paths);
-        for bundle in find_bundles_in(&roots, &self.settings.quarantined) {
-            let found = scan_bundle(&bundle, &self.sentinel);
-            self.cache
-                .record(&bundle, found.iter().map(|f| f.id.clone()).collect());
+        let bundles = find_bundles_in(&roots, &self.settings.quarantined);
+        for bundle in &bundles {
+            let cached = self
+                .scan_cache_path
+                .is_some()
+                .then(|| self.cache.lookup(bundle))
+                .flatten()
+                .map(<[_]>::to_vec);
+            let found = match cached {
+                Some(found) => found,
+                None => {
+                    let found = scan_bundle(bundle, &self.sentinel);
+                    self.cache.record(bundle, &found);
+                    found
+                }
+            };
             self.found.extend(found);
-            self.load_instrument_map_beside(&bundle);
+            self.load_instrument_map_beside(bundle);
         }
+        self.cache.keep_only(&bundles);
+        let saved = match &self.scan_cache_path {
+            Some(path) => self.cache.save(path),
+            None => Ok(()),
+        };
         // Loadable first, because that is the number that decides whether there is anything to do;
         // the total matters only when it is larger, and then the difference is the interesting part.
         let loadable = self.found.iter().filter(|f| f.is_supported()).count();
@@ -2444,6 +2457,11 @@ impl PlayerApp {
         } else {
             format!("{loadable} of {} plugins can be loaded", self.found.len())
         });
+        // A cache that cannot be written costs the next start a full scan, nothing else; saying so
+        // explains a slow start.
+        if let Err(reason) = saved {
+            self.status = Some(format!("the plugin scan could not be saved: {reason}"));
+        }
 
         // **The engine comes back if an instrument was playing through it.** The stop at the top
         // is right — the plugin list changes underneath a scan — but leaving it stopped left the

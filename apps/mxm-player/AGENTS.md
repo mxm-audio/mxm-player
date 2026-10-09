@@ -6,7 +6,8 @@ Parent: [`../../AGENTS.md`](../../AGENTS.md)
 
 A CLAP **host** for testing and playing the MXM Synth Collection. It loads bundles at runtime, so it works
 for every future MXM plugin without rebuilding and tests the `.clap` we actually ship rather than a
-standalone wrapper around it.
+standalone wrapper around it. VST3 bundles load as CLAP plugins
+(mxm-kit's `mxm-vst3-host`), so every rule below holds for them unchanged.
 
 The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES.md): read them first.
 
@@ -28,6 +29,11 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
 - **v1 scope is decided**: no audio input, no embedded plugin GUI (editors float in a window the plugin owns,
   `src/engine/editor.rs`), one source and one serial chain (source → effects → device; no bus, send or
   parallel path). Never add a disabled control implying otherwise. [NOTES.md § Scope](NOTES.md#scope-deliberately)
+- **A `.vst3` loads through `entry::load` as a CLAP entry** (`mxm_vst3_host::Vst3Entry`); discovery
+  adds the VST3 folders (`mxm_vst3_host::standard_folders`) and never looks inside a `.vst3` bundle,
+  whose module is another `.vst3`. Nothing past the loader knows a plugin is VST3.
+  `main` calls `mxm_vst3_host::serve_probe()` first: a VST3 module's classes are read in a copy of
+  the player, so a module that hangs or asks for a login never stalls a scan.
 - **`src/envelope.rs` is the v1 CLAP envelope**: anything outside it is refused with the reason shown, in
   every picker; a refusal without a reason is a bug. [NOTES.md § Envelope](NOTES.md#the-compatibility-envelope-is-enforceable-and-refusals-carry-reasons)
 - **The chain** (`src/engine/fx.rs`): an effect has one main input and one main output. Add, remove and move
@@ -60,6 +66,9 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
   runs each frame from `service` and never gives up; a reconnect republishes the CC mask and sequencer
   state; Play refuses while dead or wedged; a start failing after activation deactivates. [NOTES.md § Dead stream](NOTES.md#a-dead-stream-is-not-a-wedged-plugin)
 - **Discovery runs plugin code**: write the sentinel before entering an uncached bundle, clear it on success.
+  A start and a Rescan read unchanged bundles from the saved `ScanCache` and enter only new and
+  changed ones; nothing scans in between (the owner, 2026-10-09). A sandbox keeps no cache. Bump
+  `SCAN_RULES` when `envelope.rs` or `offline::describe` changes a verdict. [NOTES.md § Discovery](NOTES.md#discovery-executes-arbitrary-code)
   Settings are written eagerly, replaced atomically. **Fault isolation is partial**; say so plainly. [NOTES.md § Discovery](NOTES.md#discovery-executes-arbitrary-code) · [§ Settings](NOTES.md#settings-are-written-eagerly-and-replaced-atomically) · [§ Faults](NOTES.md#fault-isolation-is-partial-and-says-so)
 
 ## Parameters, keyboards and MIDI input
@@ -79,7 +88,9 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
 ## The interface
 
 - **Status bar**: `load` always, other meters only when they have something to say, all in `dump`; the
-  plugin picker lives there. Sibling `ScrollArea`s need distinct `id_salt`s; the browser column scrolls as a
+  plugin picker lives there. **Both plugin menus are `src/ui/plugin_menu.rs`**: a search field,
+  columns before a scroll bar, MXM first, refusals in a submenu with their reasons (the owner,
+  2026-10-09). Sibling `ScrollArea`s need distinct `id_salt`s; the browser column scrolls as a
   whole. [NOTES.md § Status](NOTES.md#a-status-reading-appears-when-it-has-something-to-say) · [§ Picker](NOTES.md#the-plugin-picker-is-a-menu-of-what-can-be-loaded-and-it-lives-in-the-status-bar) · [§ ScrollAreas](NOTES.md#sibling-scrollareas-need-distinct-ids) · [§ Browser](NOTES.md#the-browser-column-fits-the-panel-it-is-given)
 - **Style comes from `mxm-ui`**, at startup and every frame; `src/ui/adapter.rs` is the only translation
   point, so never style outside it; every colour from `adapter::tokens_for`. Theme: `theme <light|dark|system>`,

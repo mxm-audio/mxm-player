@@ -54,6 +54,10 @@ pub struct PlayerConfig {
     pub backend: Box<dyn Backend>,
     pub settings_path: PathBuf,
     pub sentinel_path: PathBuf,
+    /// Where what the last scan found is saved, so a scan enters only new and changed bundles.
+    /// `None` keeps no cache and scans every bundle every time, as a sandbox does: a cache left in
+    /// a test's folder by an earlier run could carry another build's verdicts into it.
+    pub scan_cache_path: Option<PathBuf>,
     /// The user's control-map overlay. The shipped collection standard is compiled in, so this
     /// file is optional and its absence is the ordinary case.
     pub control_map_path: PathBuf,
@@ -78,6 +82,7 @@ impl PlayerConfig {
             backend: Box::new(CpalBackend::new()),
             settings_path: crate::settings::Settings::default_path(),
             sentinel_path: crate::discovery::Sentinel::default_path(),
+            scan_cache_path: Some(crate::discovery::ScanCache::default_path()),
             control_map_path: crate::control_map::default_user_path(),
             sequence_dir: crate::sequencer::sequence::default_dir(),
             exports_dir: crate::sequencer::export::default_dir(),
@@ -97,6 +102,7 @@ impl PlayerConfig {
             backend,
             settings_path: dir.join("settings.json"),
             sentinel_path: dir.join("scanning.sentinel"),
+            scan_cache_path: None,
             control_map_path: dir.join("control-map.json"),
             sequence_dir: dir.join("sequences"),
             exports_dir: dir.join("exports"),
@@ -142,6 +148,10 @@ mod tests {
 
         assert!(config.settings_path.starts_with(&dir));
         assert!(config.sentinel_path.starts_with(&dir));
+        assert!(
+            config.scan_cache_path.is_none(),
+            "a sandbox keeps no scan cache"
+        );
         assert!(config.control_map_path.starts_with(&dir));
         assert!(config.sequence_dir.starts_with(&dir));
         assert!(config.exports_dir.starts_with(&dir));

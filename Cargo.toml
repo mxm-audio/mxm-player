@@ -32,6 +32,7 @@ mxm-measure = { git = "https://github.com/mxm-audio/mxm-kit", branch = "main" }
 mxm-player = { path = "apps/mxm-player" }
 mxm-player-harness = { path = "apps/mxm-player-harness" }
 mxm-ui = { git = "https://github.com/mxm-audio/mxm-kit", branch = "main" }
+mxm-vst3-host = { git = "https://github.com/mxm-audio/mxm-kit", branch = "main" }
 mxm-xtask = { git = "https://github.com/mxm-audio/mxm-kit", branch = "main" }
 
 [profile.release]

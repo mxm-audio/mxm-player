@@ -11,16 +11,26 @@
 //! as CLAP requires, but its code stays mapped, as most hosts leave it. Windows and macOS load it as
 //! clack-host always has. Every load goes through here, the test harness's included
 //! (`mxm-player-harness`): one direct `PluginEntry::load` left elsewhere is the crash back.
+//!
+//! **A `.vst3` is a CLAP entry too.** mxm-kit's `mxm-vst3-host` offers a VST3 module as an
+//! in-process CLAP entry, which clack-host loads like any other (`PluginEntry::load_from_clack`),
+//! so everything past this function treats a VST3 plugin as the CLAP plugin it is shown as. It
+//! keeps the same never-unmapped rule for the module's library on Linux.
 
 use clack_host::entry::{PluginEntry, PluginEntryError};
 use std::path::Path;
 
-/// Loads and initialises the CLAP entry of the plugin bundle at `bundle`.
+/// Loads and initialises the CLAP entry of the plugin bundle at `bundle`, or the CLAP entry a
+/// VST3 bundle is offered as.
 ///
 /// # Safety
 ///
 /// As [`PluginEntry::load`]: loading a library runs its code.
 pub unsafe fn load(bundle: &Path) -> Result<PluginEntry, PluginEntryError> {
+    if mxm_vst3_host::is_bundle(bundle) {
+        let path = std::ffi::CString::new(bundle.to_string_lossy().into_owned())?;
+        return PluginEntry::load_from_clack::<mxm_vst3_host::Vst3Entry>(&path);
+    }
     #[cfg(target_os = "linux")]
     {
         use clack_host::entry::LibraryEntry;

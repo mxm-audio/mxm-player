@@ -100,10 +100,16 @@ Child DOX Index
 # Purpose
 
 **mxm-player** is MXM Player, the CLAP host that plays, sequences and tests the MXM instruments and effects.
+It hosts VST3 plugins too, as CLAP plugins: mxm-kit's `mxm-vst3-host` offers a `.vst3` module as an
+in-process CLAP entry (`apps/mxm-player/src/entry.rs`).
 
 **No new features** (the owner, 2026-10-07: "All player work now goes into the daw"). Playing,
 sequencing and hosting work belongs in newDAWn. This repository stays as the host the plugins'
-`host-tests` and the collection checks run in: fix what those need, nothing more.
+`host-tests` and the collection checks run in: fix what those need, nothing more. **One exception,
+VST3 hosting** (the owner, 2026-10-09: "We need VST3 support ourselves in the player and daw.
+Perhaps start by adding it in the player?"), which lives in the kit so newDAWn shares it, and the
+plugin menus that VST3's hundreds of plugins outgrew: columns, search and refusals in a submenu (the
+owner, 2026-10-09).
 
 It is one of the MXM products, each in its own repository under
 [github.com/mxm-audio](https://github.com/mxm-audio), built on the MIT-licensed

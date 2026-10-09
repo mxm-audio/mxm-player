@@ -15,6 +15,8 @@ const BACKENDS: eframe::wgpu::Backends = eframe::wgpu::Backends::DX12
     .union(eframe::wgpu::Backends::METAL);
 
 fn main() -> eframe::Result<()> {
+    // A copy of this program started to read a VST3 module's plugins does that and exits.
+    mxm_vst3_host::serve_probe();
     let mut wgpu_options = eframe::egui_wgpu::WgpuConfiguration::default();
     if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut wgpu_options.wgpu_setup {
         setup.instance_descriptor.backends = BACKENDS;

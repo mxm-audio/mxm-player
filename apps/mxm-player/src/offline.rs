@@ -793,8 +793,15 @@ pub fn describe(bundle: &Path) -> Vec<crate::discovery::Found> {
         .map(|(id, name, vendor, description)| {
             // Two instances, one per role: `audio-ports-config::select` is a choice made on an
             // instance, and the two roles may choose differently.
-            let support = describe_one(&entry, &id).and_then(|mut i| negotiate(&mut i));
-            let effect = describe_one(&entry, &id).and_then(|mut i| negotiate_effect(&mut i));
+            // Only the verdicts are kept: loading negotiates again (`discovery::Verdict`).
+            let support = describe_one(&entry, &id)
+                .and_then(|mut i| negotiate(&mut i))
+                .map(|_| ())
+                .map_err(|refusal| refusal.to_string());
+            let effect = describe_one(&entry, &id)
+                .and_then(|mut i| negotiate_effect(&mut i))
+                .map(|_| ())
+                .map_err(|refusal| refusal.to_string());
             crate::discovery::Found {
                 bundle: bundle.to_path_buf(),
                 id,

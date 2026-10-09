@@ -31,7 +31,8 @@
 //! Everything a strip decides is collected as a [`RailAct`] and applied **after** drawing, so the
 //! engine is never edited while the strips are still borrowing what they draw from.
 
-use super::{PlayerApp, adapter};
+use super::{PlayerApp, adapter, plugin_menu};
+use crate::discovery::Found;
 use crate::engine::editor::EditorTarget;
 use egui::epaint::TextShape;
 use egui::{Align, Layout, RichText, Sense, vec2};
@@ -224,14 +225,11 @@ impl PlayerApp {
         );
     }
 
-    /// The `+` strip: the effect picker. The scan's effect-capable plugins, then — below a
-    /// separator, disabled, each with its reason — the ones that cannot be effects, by the same
-    /// rule the plugin picker follows: a refusal moves, it does not disappear.
+    /// The `+` strip: the effect picker. The scan's effect-capable plugins in columns, then — in a
+    /// submenu, disabled, each with its reason — the ones that cannot be effects, by the same rule
+    /// the plugin picker follows: a refusal moves, it does not disappear (`plugin_menu`).
     fn add_strip(&mut self, ui: &mut egui::Ui, height: f32, acts: &mut Vec<RailAct>) {
         let tokens = adapter::tokens_for(ui);
-        let duplicates = crate::discovery::duplicated_ids(&self.found);
-        let usable: Vec<_> = self.found.iter().filter(|f| f.is_effect()).collect();
-        let refused: Vec<_> = self.found.iter().filter(|f| !f.is_effect()).collect();
         let full = self.engine.fx_len() >= crate::engine::fx::MAX_FX;
 
         ui.allocate_ui_with_layout(
@@ -249,41 +247,32 @@ impl PlayerApp {
                 ui.add_space(((height - HEADER_HEIGHT - button_height) / 2.0).max(0.0));
                 ui.push_id("add-effect", |ui| {
                     ui.add_enabled_ui(!full, |ui| {
-                        ui.menu_button(RichText::new("+").size(18.0), |ui| {
-                            if usable.is_empty() {
-                                ui.weak("Nothing found can be an effect.");
+                        let menu = ui.menu_button(RichText::new("+").size(18.0), |ui| {
+                            let chosen = plugin_menu::contents(
+                                ui,
+                                "effect",
+                                &self.found,
+                                Found::is_effect,
+                                Found::effect_refusal_reason,
+                                &plugin_menu::Words {
+                                    nothing: "Nothing found can be an effect.",
+                                    refused: "cannot be an effect",
+                                },
+                                |_| {},
+                            );
+                            if let Some((bundle, id)) = chosen {
+                                acts.push(RailAct::Add(bundle, id));
                             }
-                            for found in &usable {
-                                let text = if duplicates.contains(&found.id) {
-                                    format!("{}  ·  {}", found.name, found.location())
-                                } else {
-                                    found.name.clone()
-                                };
-                                if ui.button(text).on_hover_text(found.hover()).clicked() {
-                                    acts.push(RailAct::Add(found.bundle.clone(), found.id.clone()));
-                                    ui.close();
-                                }
-                            }
-                            if !refused.is_empty() {
-                                ui.separator();
-                                ui.weak(format!("{} cannot be an effect", refused.len()));
-                                for found in &refused {
-                                    let row = ui.add_enabled(false, egui::Button::new(&found.name));
-                                    if let Some(reason) = found.effect_refusal_reason() {
-                                        row.on_disabled_hover_text(format!(
-                                            "{}\n{reason}",
-                                            found.location()
-                                        ));
-                                    }
-                                }
-                            }
-                        })
-                        .response
-                        .on_hover_text("Add an effect after the last one.")
-                        .on_disabled_hover_text(format!(
-                            "The chain holds at most {} effects.",
-                            crate::engine::fx::MAX_FX
-                        ));
+                        });
+                        if menu.inner.is_none() {
+                            plugin_menu::forget_search(ui.ctx(), "effect");
+                        }
+                        menu.response
+                            .on_hover_text("Add an effect after the last one.")
+                            .on_disabled_hover_text(format!(
+                                "The chain holds at most {} effects.",
+                                crate::engine::fx::MAX_FX
+                            ));
                     });
                 });
             },

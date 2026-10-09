@@ -361,6 +361,20 @@ from a test; the known-issues entry records how it was exercised by hand.
 crashes the process mid-scan. Before entering an uncached bundle the scanner writes a **sentinel**
 naming it and clears it on success. Preserve that ordering.
 
+**The cache is saved, and every scan reads through it** (the owner, 2026-10-09: "yes, cache the
+scan too"; and on watching the folders while running: it "should only happen on startup or manual
+rescan"). Scanning loads every bundle and instantiates each plugin twice; with VST3's hundreds of
+plugins a debug build's first window waited three minutes. `ScanCache` keeps each bundle's `Found`
+rows in `scan-cache.json` beside the settings (`PlayerConfig::scan_cache_path`); a start and a
+Rescan alike enter only new and changed bundles, and drop removed ones, so a plugin installed while
+the player runs arrives with a Rescan of seconds. A plugin whose answer changed without its files (a
+licence activated) is read again once the cache file is deleted. A folder bundle's fingerprint is
+its files' summed size and newest time, since rebuilding the module inside need not touch the
+folder. A scan keeps verdicts, not envelopes (`discovery::Verdict`): loading negotiates again, so
+yes, or no and why, is all a picker needs, and it saves as text. A cache written under other
+`SCAN_RULES` is not read: bump its revision when `envelope.rs` or `offline::describe` changes a
+verdict. A sandbox keeps no cache, so every test scans in full.
+
 ### Settings are written eagerly and replaced atomically
 
 In-process hosting can die without warning, so device, ports, last plugin and the quarantine list
@@ -522,8 +536,17 @@ be used in the arrangement the player is meant for. The picker sits beside *Show
 plugin never requires expanding anything.
 
 **It prioritizes what can be loaded.** Loadable plugins lead the menu. Entries outside the v1
-envelope remain below a separator, disabled, with their refusal reason and location on hover; a
-refusal without a visible reason is a bug.
+envelope move into a submenu at the foot, named with their count, disabled, with their refusal
+reason and location on hover; a refusal without a visible reason is a bug. Listed under the choices,
+the hundred refused rows a machine with VST3 plugins brings buried the choices.
+
+**Columns before a scroll bar** (the owner, 2026-10-09: "make the menu have columns with the plugin.
+and if that isnt enough then add the scroll bar"). One column of hundreds of plugins ran off the
+screen with its end out of reach. `src/ui/plugin_menu.rs` lays both menus out, the instrument
+picker's and the rail's `+`: rows flow down a column and into the next, as few columns as the
+screen's height needs and as many as its width allows, the rows shared out evenly; only past that
+does it scroll. A search field heads it, focused as the menu opens, matching name, maker or id;
+`Enter` takes the first match. MXM's own plugins (`dk.mxm.` ids) come first, under their own heading.
 
 **A loadable entry's hover says what the plugin is** (the owner, 2026-09-27): its descriptor's own
 description, then its vendor — `Found::hover`, read from the CLAP descriptor at discovery

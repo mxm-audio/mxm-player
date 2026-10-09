@@ -17,7 +17,10 @@ name = "mxm-player"
 path = "src/main.rs"
 
 [dependencies]
-clack-host = "=0.1.1"
+# `clack-plugin`: a VST3 module is loaded as an in-process CLAP entry (`src/entry.rs`).
+clack-host = { version = "=0.1.1", features = ["clack-plugin"] }
+# VST3 plugins, offered to everything here as CLAP plugins (the owner, 2026-10-09).
+mxm-vst3-host = { workspace = true }
 clack-extensions = { version = "=0.1.1", default-features = false, features = [
     "clack-host",
     "audio-ports", "audio-ports-config", "note-ports",
