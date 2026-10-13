@@ -182,7 +182,7 @@ impl Session {
         // **The state first.** The encoder refuses a non-finite sample, and a session is often run to
         // investigate exactly that plugin: the dump survives, and the error names the sample.
         let state = self.state();
-        std::fs::write(&json, state.to_json()).map_err(|e| e.to_string())?;
+        crate::settings::write_atomic(&json, state.to_json().as_bytes())?;
 
         mxm_audio_file::write(
             &wav,

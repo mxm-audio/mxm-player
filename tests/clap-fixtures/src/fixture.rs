@@ -463,7 +463,7 @@ impl<'a> PluginAudioProcessor<'a, FixtureShared, FixtureMainThread<'a>>
 
     fn process(
         &mut self,
-        _process: Process,
+        process: Process,
         mut audio: Audio,
         events: Events,
     ) -> Result<ProcessStatus, PluginError> {
@@ -520,6 +520,20 @@ impl<'a> PluginAudioProcessor<'a, FixtureShared, FixtureMainThread<'a>>
                 Ok(ProcessStatus::Tail)
             }
             Behaviour::Effect => self.process_effect(&mut audio),
+            Behaviour::TransportProbe => {
+                let position = process
+                    .transport
+                    .map_or(-1.0, |transport| transport.song_pos_beats.to_float() as f32);
+                for mut port in audio.output_ports() {
+                    let Some(channels) = port.channels()?.into_f32() else {
+                        continue;
+                    };
+                    for channel in channels {
+                        channel.fill(position);
+                    }
+                }
+                Ok(ProcessStatus::Continue)
+            }
         }
     }
 

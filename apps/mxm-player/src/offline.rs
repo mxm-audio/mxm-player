@@ -135,6 +135,14 @@ pub struct RenderConfig {
     /// Without this an export sounds nothing like what the user was listening to: a bundle path
     /// and a plugin id give you a freshly instantiated plugin, and nothing else.
     pub state: Option<Vec<u8>>,
+    /// The tempo of a transport that starts playing at beat 0 with the render, or `None` for no
+    /// transport at all.
+    ///
+    /// **Export supplies one and nothing else does.** A tempo-synced LFO or delay follows the host's
+    /// tempo, so an export rendered without it runs at its free rate while live playback runs synced
+    /// (`crate::events::transport`). Every other caller — host tests, golden renders — renders as it
+    /// always has, with no transport.
+    pub tempo: Option<f64>,
 }
 
 /// One effect a render goes through after the source: where it comes from and the patch to
@@ -157,11 +165,15 @@ pub struct EffectSpec {
     pub events: Vec<ScheduledEvent>,
 }
 
-/// Loads `plugin_id` from `entry` as a fresh, deactivated instance.
-fn instantiate(
+/// A fresh, deactivated instance of `plugin_id` from `entry`, and the host state it reports into.
+///
+/// **The one place the player makes a plugin instance**: the live engine, the offline render,
+/// discovery and `mxm-player-harness` all come here, so the descriptor lookup and the reason a
+/// plugin cannot be created are said one way. A caller that has no use for the host state drops it.
+pub fn instantiate_with_state(
     entry: &PluginEntry,
     plugin_id: &str,
-) -> Result<PluginInstance<MxmHost>, RenderError> {
+) -> Result<(PluginInstance<MxmHost>, std::sync::Arc<PlayerHostState>), RenderError> {
     let factory = entry
         .get_plugin_factory()
         .ok_or(RenderError::NoPluginFactory)?;
@@ -176,13 +188,23 @@ fn instantiate(
         .to_owned();
 
     let state = std::sync::Arc::new(PlayerHostState::new());
-    Ok(PluginInstance::<MxmHost>::new(
-        move |_| HostShared::new(state),
+    let for_plugin = std::sync::Arc::clone(&state);
+    let instance = PluginInstance::<MxmHost>::new(
+        move |_| HostShared::new(for_plugin),
         |shared| HostMainThread::new(shared),
         entry,
         &id,
         &host_info(),
-    )?)
+    )?;
+    Ok((instance, state))
+}
+
+/// [`instantiate_with_state`] for a caller with no use for the host state.
+fn instantiate(
+    entry: &PluginEntry,
+    plugin_id: &str,
+) -> Result<PluginInstance<MxmHost>, RenderError> {
+    instantiate_with_state(entry, plugin_id).map(|(instance, _)| instance)
 }
 
 /// Restores a patch into a deactivated instance.
@@ -342,13 +364,16 @@ fn render_inner(
             }]);
 
             output_events.clear();
+            let transport = config.tempo.map(|tempo| {
+                crate::events::transport::playing_from_start(frame, config.sample_rate, tempo)
+            });
             let status = processor.process(
                 &input_audio,
                 &mut audio_outputs,
                 &InputEvents::from_buffer(&input_events),
                 &mut OutputEvents::from_buffer(&mut output_events),
                 Some(frame),
-                None,
+                transport.as_ref(),
             )?;
             statuses.push(status);
             output_event_count += u64::from(output_events.len());
@@ -453,14 +478,16 @@ fn select_source_configuration(
 /// mono effect sums at half, mono into a stereo effect duplicates — so an export sounds like the
 /// room did. The render is **not lengthened**: an effect's tail past the end is the sequence's
 /// business, as `sequencer::export` says, and an empty bar at the end is how one is asked for.
+/// `tempo` is [`RenderConfig::tempo`]'s, for the effects: an export passes the same one to both.
 pub fn through_effects(
     mut result: RenderResult,
     effects: &[EffectSpec],
     sample_rate: f64,
     block_size: u32,
+    tempo: Option<f64>,
 ) -> Result<RenderResult, RenderError> {
     for effect in effects {
-        result.channels = run_effect(effect, &result.channels, sample_rate, block_size)?;
+        result.channels = run_effect(effect, &result.channels, sample_rate, block_size, tempo)?;
     }
     Ok(result)
 }
@@ -471,6 +498,7 @@ fn run_effect(
     source: &[Vec<f32>],
     sample_rate: f64,
     block_size: u32,
+    tempo: Option<f64>,
 ) -> Result<Vec<Vec<f32>>, RenderError> {
     // SAFETY: as in `render` — loading a bundle runs its code, and the caller chose the bundle.
     let entry = unsafe { crate::entry::load(&effect.bundle) }
@@ -549,7 +577,15 @@ fn run_effect(
                 &InputEvents::from_buffer(&input_events),
                 &mut OutputEvents::from_buffer(&mut output_events),
                 Some(frame as u64),
-                None,
+                tempo
+                    .map(|tempo| {
+                        crate::events::transport::playing_from_start(
+                            frame as u64,
+                            sample_rate,
+                            tempo,
+                        )
+                    })
+                    .as_ref(),
             )?;
 
             for (channel, buffer) in output.iter_mut().zip(output_block.iter()) {
@@ -657,11 +693,7 @@ fn push_event(buffer: &mut EventBuffer, time: u32, kind: EventKind, envelope: &E
             Dialect::Midi1 => buffer.push(&MidiEvent::new(
                 time,
                 port,
-                [
-                    0x90 | (channel as u8 & 0x0f),
-                    key as u8 & 0x7f,
-                    ((velocity * 127.0).round() as u8).min(127),
-                ],
+                crate::midi::note_on(channel as u8, key as u8, velocity),
             )),
         },
         EventKind::NoteOff {
@@ -678,11 +710,7 @@ fn push_event(buffer: &mut EventBuffer, time: u32, kind: EventKind, envelope: &E
             Dialect::Midi1 => buffer.push(&MidiEvent::new(
                 time,
                 port,
-                [
-                    0x80 | (channel as u8 & 0x0f),
-                    key as u8 & 0x7f,
-                    ((velocity * 127.0).round() as u8).min(127),
-                ],
+                crate::midi::note_off(channel as u8, key as u8, velocity),
             )),
         },
         EventKind::Midi { data } => buffer.push(&MidiEvent::new(time, port, data)),
@@ -721,24 +749,7 @@ pub fn inspect(bundle: &Path, plugin_id: &str) -> Result<Envelope, RenderError> 
     // SAFETY: as in `render` — loading a bundle runs its code; the caller chooses the bundle.
     let entry =
         unsafe { crate::entry::load(bundle) }.map_err(|e| RenderError::Load(e.to_string()))?;
-    let factory = entry
-        .get_plugin_factory()
-        .ok_or(RenderError::NoPluginFactory)?;
-    let id = factory
-        .plugin_descriptors()
-        .find(|d| d.id().map(|id| id.to_bytes()) == Some(plugin_id.as_bytes()))
-        .and_then(|d| d.id())
-        .ok_or_else(|| RenderError::PluginNotFound(plugin_id.to_owned()))?
-        .to_owned();
-
-    let state = std::sync::Arc::new(PlayerHostState::new());
-    let mut instance = PluginInstance::<MxmHost>::new(
-        move |_| HostShared::new(state),
-        |shared| HostMainThread::new(shared),
-        &entry,
-        &id,
-        &host_info(),
-    )?;
+    let mut instance = instantiate(&entry, plugin_id)?;
 
     negotiate(&mut instance).map_err(RenderError::Refused)
 }
@@ -816,20 +827,11 @@ pub fn describe(bundle: &Path) -> Vec<crate::discovery::Found> {
 }
 
 /// A fresh, deactivated instance to negotiate one role on.
+///
+/// **A failure to create it is said as that**, through [`instantiate`]'s own reason, and never as an
+/// envelope refusal it is not.
 fn describe_one(entry: &PluginEntry, plugin_id: &str) -> Result<PluginInstance<MxmHost>, Refusal> {
-    let Ok(id) = std::ffi::CString::new(plugin_id) else {
-        return Err(Refusal::NoAudioPorts);
-    };
-
-    let state = std::sync::Arc::new(PlayerHostState::new());
-    PluginInstance::<MxmHost>::new(
-        move |_| HostShared::new(state),
-        |shared| HostMainThread::new(shared),
-        entry,
-        &id,
-        &host_info(),
-    )
-    .map_err(|_| Refusal::NoAudioPorts)
+    instantiate(entry, plugin_id).map_err(|why| Refusal::NotInstantiable(why.to_string()))
 }
 
 /// Loads a bundle and negotiates the **effect** envelope for one plugin, without activating it.
@@ -837,6 +839,142 @@ pub fn inspect_effect(bundle: &Path, plugin_id: &str) -> Result<EffectEnvelope, 
     // SAFETY: as in `render` — loading a bundle runs its code; the caller chooses the bundle.
     let entry =
         unsafe { crate::entry::load(bundle) }.map_err(|e| RenderError::Load(e.to_string()))?;
-    let mut instance = describe_one(&entry, plugin_id).map_err(RenderError::Refused)?;
+    let mut instance = instantiate(&entry, plugin_id)?;
     negotiate_effect(&mut instance).map_err(RenderError::Refused)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::envelope::NotePortBinding;
+
+    fn midi_envelope() -> Envelope {
+        Envelope {
+            audio: AudioLayout {
+                channel_count: 2,
+                port_id: ClapId::new(0),
+            },
+            note_input: Some(NotePortBinding {
+                index: 0,
+                id: ClapId::new(0),
+                dialect: Dialect::Midi1,
+                accepts_midi: true,
+            }),
+            note_output: None,
+            selected_config: None,
+            selection: String::new(),
+        }
+    }
+
+    fn midi_bytes(kind: EventKind) -> [u8; 3] {
+        let mut buffer = EventBuffer::new();
+        push_event(&mut buffer, 0, kind, &midi_envelope());
+        let event = buffer.iter().next().expect("one event");
+        event
+            .as_event::<MidiEvent>()
+            .expect("a MIDI 1 event")
+            .data()
+    }
+
+    #[test]
+    fn a_plugin_that_cannot_be_created_is_not_reported_as_having_no_audio_ports() {
+        // A refusal without a reason is a bug, and a wrong reason is worse: describing a plugin
+        // that could not even be instantiated as "no audio ports" sends whoever reads the picker
+        // looking at the wrong extension.
+        let bundle = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/fixtures/mxm-fixtures.clap");
+        if !bundle.exists() {
+            eprintln!("skipping: run `cargo xtask fixtures --release` to stage the fixtures");
+            return;
+        }
+        let error = inspect_effect(&bundle, "dk.mxm.fixture.not-in-this-bundle")
+            .expect_err("there is no such plugin");
+        assert!(
+            !matches!(error, RenderError::Refused(Refusal::NoAudioPorts)),
+            "reported as {error}"
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("dk.mxm.fixture.not-in-this-bundle"),
+            "the reason names the plugin it could not create: {error}"
+        );
+
+        // The picker's own path, which `inspect_effect` no longer goes through: `describe` makes
+        // its instances with `describe_one`, and a creation failure there is that refusal exactly.
+        // SAFETY: a test fixture bundle, built by this workspace.
+        let entry = unsafe { crate::entry::load(&bundle) }.expect("the fixture bundle loads");
+        match describe_one(&entry, "dk.mxm.fixture.not-in-this-bundle") {
+            Err(Refusal::NotInstantiable(why)) => assert!(
+                why.contains("dk.mxm.fixture.not-in-this-bundle"),
+                "the reason names the plugin: {why}"
+            ),
+            Err(other) => panic!("reported as {other}"),
+            Ok(_) => panic!("there is no such plugin"),
+        }
+    }
+
+    #[test]
+    fn an_export_reports_each_block_at_its_first_sample() {
+        // CLAP's process transport is the state as of the block's first sample. An export's effects
+        // run under one that starts at beat 0 and advances by each block; with no tempo there is no
+        // transport at all. The probe writes the position it was given into its output, and the
+        // live worker is held to the same in `t11_fx_chain`.
+        let bundle = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/fixtures/mxm-fixtures.clap");
+        if !bundle.exists() {
+            eprintln!("skipping: run `cargo xtask fixtures --release` to stage the fixtures");
+            return;
+        }
+        let probe = || EffectSpec {
+            bundle: bundle.clone(),
+            plugin_id: "dk.mxm.fixture.transport-probe".to_owned(),
+            state: None,
+            events: Vec::new(),
+        };
+        let silence = || RenderResult {
+            channels: vec![vec![0.0; 1024]; 2],
+            envelope: midi_envelope(),
+            statuses: Vec::new(),
+            output_event_count: 0,
+        };
+
+        let timed = through_effects(silence(), &[probe()], 48_000.0, 512, Some(120.0))
+            .expect("the probe runs");
+        let one_block = 512.0 / 48_000.0 * 120.0 / 60.0;
+        assert_eq!(timed.channels[0][0], 0.0, "an export starts at beat 0");
+        assert!(
+            (f64::from(timed.channels[0][512]) - one_block).abs() < 1e-6,
+            "the second block starts one block in: {}",
+            timed.channels[0][512]
+        );
+
+        let untimed =
+            through_effects(silence(), &[probe()], 48_000.0, 512, None).expect("the probe runs");
+        assert_eq!(untimed.channels[0][0], -1.0, "no tempo, no transport");
+    }
+
+    #[test]
+    fn a_quiet_note_on_is_still_a_note_on_as_the_live_path_sends_it() {
+        // Velocity 0 on a note-on is a note-off by MIDI convention. The live path floors at 1
+        // (`midi::to_midi1`, the processor's own note-on); a render that rounded to 0 would turn
+        // the quietest step of an export into a release.
+        for velocity in [0.0, 0.001, 0.003] {
+            let data = midi_bytes(EventKind::NoteOn {
+                channel: 0,
+                key: 60,
+                velocity,
+                note_id: 0,
+            });
+            assert_eq!(data[0] & 0xf0, 0x90);
+            assert_eq!(data[2], 1, "velocity {velocity} must stay a note-on");
+        }
+        let loud = midi_bytes(EventKind::NoteOn {
+            channel: 0,
+            key: 60,
+            velocity: 2.0,
+            note_id: 0,
+        });
+        assert_eq!(loud[2], 127);
+    }
 }

@@ -1995,6 +1995,61 @@ fn turning_normalisation_off_keeps_the_rendered_level() {
     );
 }
 
+/// A parameter of the loaded plugin by its display name, so the test does not hard-code an id a later
+/// build could renumber.
+fn param_named(session: &mut Session, name: &str) -> u32 {
+    session
+        .state()
+        .plugin
+        .expect("a plugin is loaded")
+        .params
+        .iter()
+        .find(|param| param.name == name)
+        .unwrap_or_else(|| panic!("mxm-mono-01 has a parameter named {name:?}"))
+        .id
+}
+
+#[test]
+fn an_export_runs_a_tempo_synced_lfo_at_the_tempo_it_plays_at() {
+    // **Export renders through a second instance, and that instance must hear the tempo.** Without a
+    // transport the plugin's sync has no tempo to follow and falls back to the free rate, so a synced
+    // LFO exported exactly as if its sync were off — a file that sounds unlike what was playing,
+    // which is the one thing export must not do.
+    let Some(mut session) = session("seq-export-sync") else {
+        eprintln!("skipped: run `cargo xtask bundle mxm-mono-01` first");
+        return;
+    };
+
+    session.app().set_tempo(120.0);
+    for step in 0..16 {
+        session.app().toggle_step_note(step, 48);
+    }
+    // The LFO on the cutoff at full depth, so its rate is the loudest thing in the render.
+    let route_on = param_named(&mut session, "Cutoff from LFO on");
+    let depth = param_named(&mut session, "Cutoff from LFO");
+    let sync = param_named(&mut session, "LFO sync");
+    session.app().set_parameter(route_on, 1.0);
+    session.app().set_parameter(depth, 1.0);
+    session.app().set_parameter(sync, 0.0);
+    session.app().set_normalise_export(false);
+    session.advance_blocks(4).expect("advance");
+    let free = decode(&session.app().export_audio("lfo-free").expect("export")).interleaved;
+
+    session.app().set_parameter(sync, 1.0);
+    session.advance_blocks(4).expect("advance");
+    let synced = decode(&session.app().export_audio("lfo-synced").expect("export")).interleaved;
+
+    assert_eq!(
+        free.len(),
+        synced.len(),
+        "the same sequence renders the same length"
+    );
+    assert_ne!(
+        free, synced,
+        "a synced LFO exported at its free rate: the render was given no tempo to follow"
+    );
+}
+
 #[test]
 fn an_exported_wav_stays_valid_with_the_acid_chunk_present() {
     // The property that matters if the chunk is wrong or unsupported: a reader that has never
@@ -2051,6 +2106,34 @@ fn every_export_path_stays_inside_the_sandbox() {
 
     assert!(wav.starts_with(&sandbox), "{}", wav.display());
     assert!(mid.starts_with(&sandbox), "{}", mid.display());
+}
+
+#[test]
+fn a_midi_file_name_cannot_leave_the_exports_folder() {
+    // The name is the person's — or a socket client's — and `sequence::safe_stem` is the one rule
+    // that keeps it a file name. `save_midi` used to join it raw, and the atomic writer creates
+    // missing parents, so `../outside` wrote beside the exports folder and a deeper one made
+    // folders on the way.
+    let mut harness = AppHarness::new("seq-midi-name", Vec::new());
+    harness.run();
+    let exports = harness
+        .app()
+        .save_midi("plain")
+        .expect("save")
+        .parent()
+        .expect("a folder")
+        .to_path_buf();
+
+    for name in ["../outside", "../../made/here", "sub/dir", "..\\up"] {
+        let path = harness.app().save_midi(name).expect("save");
+        assert_eq!(
+            path.parent(),
+            Some(exports.as_path()),
+            "{name:?} was written to {}",
+            path.display()
+        );
+        assert!(path.exists(), "{}", path.display());
+    }
 }
 
 /// Exports a random C Dorian loop as a `.wav` and a `.mid`, for a person to listen to and inspect.
@@ -4577,6 +4660,7 @@ fn a_rendered_lock_reaches_the_plugin_as_modulation_and_not_as_a_value() {
                 block_size: 512,
                 total_frames: 24_000,
                 state: None,
+                tempo: None,
             },
             &events,
         )

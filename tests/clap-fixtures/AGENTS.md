@@ -63,6 +63,15 @@ and the line takes `in + 0.5 * delayed` in its place — every echo half the las
 480 × 12 frames; it returns `Tail` until the input has been silent that long, then snaps the
 lines to digital silence and returns `Sleep`. `reset` restores exactly the `activate` state.
 
+## The transport probe reports what the host told it
+
+`dk.mxm.fixture.transport-probe` (`Behaviour::TransportProbe`, stereo effect ports) fills every
+output sample of a block with the song position, in beats, of the transport the host passed to that
+block — or `-1.0` when it passed none. A host test reads the position straight out of the audio, so
+the player's live worker and its offline render are held to the same per-block position
+(`t11_fx_chain`'s `the_chain_is_told_each_chunks_first_sample_position`, `offline`'s
+`an_export_reports_each_block_at_its_first_sample`).
+
 ## Effect-shaped host callback coverage
 
 `dk.mxm.fixture.effect-main-thread` uses `Behaviour::MainThreadCallback` with a stereo effect

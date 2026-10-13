@@ -35,7 +35,9 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
   `main` calls `mxm_vst3_host::serve_probe()` first: a VST3 module's classes are read in a copy of
   the player, so a module that hangs or asks for a login never stalls a scan.
 - **`src/envelope.rs` is the v1 CLAP envelope**: anything outside it is refused with the reason shown, in
-  every picker; a refusal without a reason is a bug. [NOTES.md § Envelope](NOTES.md#the-compatibility-envelope-is-enforceable-and-refusals-carry-reasons)
+  every picker; a refusal without a reason is a bug, and so is a wrong one: a plugin that cannot be
+  created is `Refusal::NotInstantiable` with the factory's reason. **`offline::instantiate_with_state`
+  is the one place an instance is made** (engine, offline, discovery, `inspect`, the harness). [NOTES.md § Envelope](NOTES.md#the-compatibility-envelope-is-enforceable-and-refusals-carry-reasons) · [§ One instance path](NOTES.md#one-instance-path-one-transport-one-atomic-write)
 - **The chain** (`src/engine/fx.rs`): an effect has one main input and one main output. Add, remove and move
   stop the worker, edit the slots and restart, the source untouched; at most `MAX_FX`; effects activate
   after the source and deactivate before it on every path. **Off is uncalled**: input passes to the bit;
@@ -69,7 +71,8 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
   A start and a Rescan read unchanged bundles from the saved `ScanCache` and enter only new and
   changed ones; nothing scans in between (the owner, 2026-10-09). A sandbox keeps no cache. Bump
   `SCAN_RULES` when `envelope.rs` or `offline::describe` changes a verdict. [NOTES.md § Discovery](NOTES.md#discovery-executes-arbitrary-code)
-  Settings are written eagerly, replaced atomically. **Fault isolation is partial**; say so plainly. [NOTES.md § Discovery](NOTES.md#discovery-executes-arbitrary-code) · [§ Settings](NOTES.md#settings-are-written-eagerly-and-replaced-atomically) · [§ Faults](NOTES.md#fault-isolation-is-partial-and-says-so)
+  Settings are written eagerly, replaced atomically; so is every file the player keeps for somebody
+  (sequences, `.mid` files, both CLAP state dumps), all through `settings::write_atomic`. **Fault isolation is partial**; say so plainly. [NOTES.md § Discovery](NOTES.md#discovery-executes-arbitrary-code) · [§ Settings](NOTES.md#settings-are-written-eagerly-and-replaced-atomically) · [§ Faults](NOTES.md#fault-isolation-is-partial-and-says-so)
 
 ## Parameters, keyboards and MIDI input
 
@@ -136,9 +139,12 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
   acts only through `PlayerApp::perform`; `lock` takes the selected-step funnel; `dump` keeps what the
   window hides. [NOTES.md § CLI](NOTES.md#the-cli-everything-a-person-can-do-has-a-verb-and-that-is-a-contract)
 - **Export renders a second instance with the live state**, after pending edits settle, through every
-  effect that is on, with the locks on every step; a plugin without `state` is refused; `normalise <on|off>`;
+  effect that is on, with the locks on every step, under the session's tempo and a playing transport
+  (`RenderConfig::tempo`, `events::transport`, as live playback; both report a block at its first
+  sample, CLAP's definition, held by the transport-probe fixture); a plugin without `state` is refused; `normalise <on|off>`;
   a render is exactly the sequence. [NOTES.md § Export](NOTES.md#exporting-audio-renders-a-snapshot-and-says-what-it-cannot-promise) · [§ The file](NOTES.md#the-exported-file-is-exactly-the-sequence)
-- **`.mid` is interchange, `.seq.json` fixtures**: refuse with a reason, name what is lost; run
+- **`.mid` is interchange, `.seq.json` fixtures**: refuse with a reason, name what is lost; a save name cannot leave the exports folder
+  (`sequence::safe_stem`); run
   `tests/midi-conformance/verify.py` when the writer changes. Files are written by `mxm-audio-file`; the
   player decodes nothing. [NOTES.md § MIDI](NOTES.md#midi-is-the-interchange-format-json-is-the-fixture-format)
 - **Control mapping runs on the GUI thread**; the audio thread learns a `CcMask`; `RESERVED_CCS` are never

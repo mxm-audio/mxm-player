@@ -291,6 +291,7 @@ fn a_zero_velocity_note_on_after_input_saturation_still_terminates_the_note() {
             sample_rate: 48_000.0,
             block_size: BLOCK,
             total_frames: u64::from(BLOCK) * 1_603,
+            tempo: None,
         },
         &events,
     )

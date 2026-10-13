@@ -2122,3 +2122,34 @@ checked nothing.
 
 Manual steps, recorded in the plan rather than pretended to be automated: the real CPAL backend, and
 playing it with a MIDI keyboard.
+
+## One instance path, one transport, one atomic write
+
+The architecture audit (the archive's `plans/plan-architecture-audit.md`) found the player's offline
+host loop written beside the live one rather than from it, and four copies of helpers that had begun
+to disagree.
+
+- **Export ignored tempo.** A tempo-synced LFO or delay exported at its free rate. The render and
+  every effect now run under a playing transport from the sequence's first beat at the export's tempo
+  (`RenderConfig::tempo`), built by `events::transport` exactly as the live worker builds its own
+  (`an_export_runs_a_tempo_synced_lfo_at_the_tempo_it_plays_at`). Only export passes a tempo: every
+  other offline render, golden renders included, still runs with no transport.
+- **Live playback read the transport one chunk ahead.** The worker built each chunk's transport after
+  advancing the sequencer; it now takes it before and hands that one event to the source and the
+  chain. The `dk.mxm.fixture.transport-probe` effect writes the position it is given into its audio,
+  so the live and offline paths are held to the same position.
+- **A quiet note-on became a note-off on export.** `midi::note_on` and `note_off` are the one place a
+  velocity becomes an event, live and offline alike.
+- **A plugin that cannot be created was reported as having no audio ports.** It is
+  `Refusal::NotInstantiable`, carrying the factory's reason
+  (`a_plugin_that_cannot_be_created_is_not_reported_as_having_no_audio_ports`). Instances were made
+  in five places with three wordings of that refusal; `offline::instantiate_with_state` is the one.
+  `offline::render_configuration` is the host proof for a source layout the production slot does not
+  select (an auxiliary input); only the mxm-para-07 and mxm-mono-pr1 host tests call it.
+- **Saved sequences and `.mid` files took a weaker copy of the atomic write** (no sync, no retry);
+  the CLAP state dumps took none. All go through `settings::write_atomic`: a sibling
+  `<name>.<ext>.tmp`, flushed and synced, then renamed over the old file with a brief retry on a
+  Windows sharing violation. Audio goes through `mxm_audio_file::write_atomic`. A `.mid` save joined a
+  raw name, so `../x` left the exports folder; `sequence::safe_stem` is the one sanitiser.
+- **`engine::audio::peak` reported the loudest finite sample**, so a NaN render passed every check
+  built on it. It is NaN for a render with any non-finite sample, and the harness measures through it.

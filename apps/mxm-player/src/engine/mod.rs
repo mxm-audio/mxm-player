@@ -16,9 +16,7 @@ use crate::envelope::{EffectEnvelope, Envelope, Refusal, negotiate, negotiate_ef
 use crate::events::input::{
     MAX_INPUT_PRODUCERS, PRODUCER_QUEUE_CAPACITY, PanicEpoch, SourceId, TimedEvent,
 };
-use crate::host::{
-    HostAudioProcessor, HostMainThread, HostShared, MxmHost, PlayerHostState, host_info,
-};
+use crate::host::{HostAudioProcessor, MxmHost, PlayerHostState};
 use crate::midi::port::{MidirSink, RunningWorker};
 use crate::midi::{OutPanic, OutgoingEvent};
 use crate::params::ParamSet;
@@ -63,6 +61,10 @@ pub const PLUGIN_OUTPUT_CAPACITY: usize = 4096;
 
 /// How many MIDI-out events may be queued for the worker.
 pub const MIDI_OUT_CAPACITY: usize = 4096;
+
+/// How many GUI → worker commands may be in flight, and therefore how many sequencer states may be;
+/// the retire queue beside it is as deep.
+pub const COMMAND_CAPACITY: usize = 64;
 
 /// Something the plugin emitted that the GUI needs to know about.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -521,26 +523,8 @@ impl Engine {
         // SAFETY: loading a CLAP bundle runs its code. That is inherent to hosting; the browser
         // decides which bundles are offered, and fixtures are only ever loaded by path.
         let entry = unsafe { crate::entry::load(bundle) }.map_err(|e| e.to_string())?;
-        let factory = entry
-            .get_plugin_factory()
-            .ok_or_else(|| "the bundle exposes no plugin factory".to_owned())?;
-        let id = factory
-            .plugin_descriptors()
-            .find(|d| d.id().map(|id| id.to_bytes()) == Some(plugin_id.as_bytes()))
-            .and_then(|d| d.id())
-            .ok_or_else(|| format!("the bundle contains no plugin `{plugin_id}`"))?
-            .to_owned();
-
-        let shared = Arc::new(PlayerHostState::new());
-        let state_for_plugin = Arc::clone(&shared);
-        let instance = PluginInstance::<MxmHost>::new(
-            move |_| HostShared::new(state_for_plugin),
-            |s| HostMainThread::new(s),
-            &entry,
-            &id,
-            &host_info(),
-        )
-        .map_err(|e| e.to_string())?;
+        let (instance, shared) =
+            crate::offline::instantiate_with_state(&entry, plugin_id).map_err(|e| e.to_string())?;
         Ok((entry, instance, shared))
     }
 
@@ -840,9 +824,6 @@ impl Engine {
             .map_err(|e| e.to_string())?;
 
         let tail: Option<PluginTail> = loaded.instance.plugin_shared_handle().get_extension();
-
-        /// How many commands may be in flight, and therefore how many sequencer states may be.
-        const COMMAND_CAPACITY: usize = 64;
 
         // Every queue is allocated here, on the GUI thread, and never resized. Queue slots
         // are preallocated for the hard maximum, so connecting a port at runtime claims a free
@@ -1589,7 +1570,7 @@ impl Engine {
         let mut handle = loaded.instance.plugin_handle();
         ext.save(&mut handle, &mut bytes)
             .map_err(|e| e.to_string())?;
-        std::fs::write(path, &bytes).map_err(|e| e.to_string())
+        crate::settings::write_atomic(path, &bytes)
     }
 
     /// Loads plugin state, then **requeries every parameter**.
@@ -1668,7 +1649,10 @@ mod tests {
     fn an_effect_with_nothing_running_takes_its_editors_edits() {
         let bundle = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/fixtures/mxm-fixtures.clap");
-        assert!(bundle.exists(), "build the quarantined fixtures first");
+        if !bundle.exists() {
+            eprintln!("skipping: run `cargo xtask fixtures --release` to stage the fixtures");
+            return;
+        }
         let mut engine = Engine::new();
         engine.add_fx(&bundle, "dk.mxm.fixture.effect").unwrap();
         assert!(!engine.fx[0].instance.is_active());
@@ -1696,7 +1680,10 @@ mod tests {
     fn effect_restart_and_port_requests_stop_renegotiate_and_allow_restart() {
         let bundle = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/fixtures/mxm-fixtures.clap");
-        assert!(bundle.exists(), "build the quarantined fixtures first");
+        if !bundle.exists() {
+            eprintln!("skipping: run `cargo xtask fixtures --release` to stage the fixtures");
+            return;
+        }
         for ports in [false, true] {
             let backend = audio::FakeBackend::new();
             let mut engine = Engine::new();

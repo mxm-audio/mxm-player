@@ -618,3 +618,51 @@ fn the_same_session_with_a_chain_renders_identical_audio() {
         "the chain is in the session's path: with it the audio differs from without"
     );
 }
+
+/// **The chain is told each chunk's first-sample position, as an export tells it.** CLAP's process
+/// transport is the state as of the block's first sample. The live worker used to build it after
+/// advancing the sequencer, so it reported each chunk's *end* — one chunk ahead of the offline
+/// render for the same sample (`offline::tests::an_export_reports_each_block_at_its_first_sample`
+/// is the export half). The probe effect writes the position it was given into its output.
+#[test]
+fn the_chain_is_told_each_chunks_first_sample_position() {
+    use mxm_player::engine::processor::Command;
+    use mxm_player::sequencer::Transport;
+    use mxm_player::sequencer::runtime::SequencerState;
+
+    let Some(source) = mxm_mono_01() else {
+        return;
+    };
+    let Some(bundle) = fixtures() else {
+        return;
+    };
+    let mut h = Harness::with_fx(
+        &source,
+        SOURCE,
+        1,
+        &[(bundle.as_path(), "dk.mxm.fixture.transport-probe")],
+    )
+    .expect("the chain builds");
+    let _ = h
+        .commands
+        .push(Command::SetSequencer(std::sync::Arc::new(SequencerState {
+            tempo: 120.0,
+            transport: Transport::Playing,
+            generation: 1,
+            serial: 1,
+            ..Default::default()
+        })));
+
+    // A held note, so the stage has input and runs: a stage with silence coming in is skipped,
+    // and the output would be the source's silence whatever the transport said.
+    h.push(0, payload(Act::NoteOn(60)).expect("a note"));
+
+    let first = h.render(BLOCK)[0];
+    let second = h.render(BLOCK)[0];
+    let one_block = BLOCK as f64 / harness::SAMPLE_RATE * 120.0 / 60.0;
+    assert_eq!(first, 0.0, "the first chunk of a sequence is at beat 0");
+    assert!(
+        (f64::from(second) - one_block).abs() < 1e-6,
+        "the second chunk starts one chunk in: {second}, expected {one_block}"
+    );
+}

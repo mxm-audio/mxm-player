@@ -167,6 +167,9 @@ pub enum Refusal {
     PortInfoUnavailable(u32),
     /// The plugin declined the configuration the player selected.
     ConfigurationRefused(ClapId),
+    /// No instance could be made to negotiate with — the factory has no such plugin, or creating
+    /// or initialising it failed. Not an envelope question at all, and never reported as one.
+    NotInstantiable(String),
 }
 
 impl fmt::Display for Refusal {
@@ -219,6 +222,7 @@ impl fmt::Display for Refusal {
                 "refused the audio port configuration {} the player selected",
                 id.get()
             ),
+            Refusal::NotInstantiable(why) => write!(f, "could not be created: {why}"),
         }
     }
 }

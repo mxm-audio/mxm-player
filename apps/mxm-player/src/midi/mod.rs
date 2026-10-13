@@ -9,6 +9,29 @@ pub use out::{MidiOutWorker, MidiSink, OutPanic, OutgoingEvent, SendOutcome};
 use clack_host::events::UnknownEvent;
 use clack_host::events::event_types::{MidiEvent, NoteOffEvent, NoteOnEvent};
 
+/// A MIDI 1 note-on for a CLAP-normalised velocity.
+///
+/// **The velocity floor is 1**: a note-on at velocity 0 is a note-off by MIDI convention, so
+/// rounding the quietest press down would release it instead. Every path that writes a note-on in
+/// MIDI 1 — the live worker, MIDI thru, plugin output, the offline render — writes it here, so they
+/// cannot disagree about that.
+pub fn note_on(channel: u8, key: u8, velocity: f64) -> [u8; 3] {
+    [
+        0x90 | (channel & 0x0f),
+        key & 0x7f,
+        (velocity * 127.0).round().clamp(1.0, 127.0) as u8,
+    ]
+}
+
+/// A MIDI 1 note-off for a CLAP-normalised release velocity, which may be 0.
+pub fn note_off(channel: u8, key: u8, velocity: f64) -> [u8; 3] {
+    [
+        0x80 | (channel & 0x0f),
+        key & 0x7f,
+        (velocity * 127.0).round().clamp(0.0, 127.0) as u8,
+    ]
+}
+
 /// Converts one plugin output event into MIDI 1 bytes, or `None` if it has no representation.
 ///
 /// `None` is not a silent drop: the caller counts it as "unrepresented", which is the whole
@@ -25,11 +48,7 @@ pub fn to_midi1(event: &UnknownEvent) -> Option<[u8; 3]> {
         if channel < 0 || key < 0 {
             return None;
         }
-        return Some([
-            0x90 | (channel as u8 & 0x0f),
-            key as u8 & 0x7f,
-            (note.velocity() * 127.0).round().clamp(1.0, 127.0) as u8,
-        ]);
+        return Some(note_on(channel as u8, key as u8, note.velocity()));
     }
 
     if let Some(note) = event.as_event::<NoteOffEvent>() {
@@ -38,11 +57,7 @@ pub fn to_midi1(event: &UnknownEvent) -> Option<[u8; 3]> {
         if channel < 0 || key < 0 {
             return None;
         }
-        return Some([
-            0x80 | (channel as u8 & 0x0f),
-            key as u8 & 0x7f,
-            (note.velocity() * 127.0).round().clamp(0.0, 127.0) as u8,
-        ]);
+        return Some(note_off(channel as u8, key as u8, note.velocity()));
     }
 
     None

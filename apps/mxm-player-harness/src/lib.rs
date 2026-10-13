@@ -1,11 +1,14 @@
 //! The harnesses MXM Player's tests drive it with — [`app_harness`], the real app with no window
 //! and a sandboxed settings directory, and [`harness`], the audio worker run on the test thread —
 //! shared with every plugin's host tests, which load that plugin's bundle through the real host.
+//! [`host_test`] is what those host tests do the same way: their bundle, a parameter by name, and
+//! the golden digest.
 
 use std::path::{Path, PathBuf};
 
 pub mod app_harness;
 pub mod harness;
+pub mod host_test;
 
 /// The root of the repository under test: the nearest directory at or above the running test's
 /// package that holds `Cargo.lock`. Bundles are staged under its `target/bundled` and the fixture

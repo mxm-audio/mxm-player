@@ -7,18 +7,18 @@
 use clack_extensions::tail::PluginTail;
 use clack_host::prelude::*;
 use mxm_player::clock::Clock;
-use mxm_player::engine::PluginOutput;
 use mxm_player::engine::fx::{FxChain, FxStage, StageConfig};
 use mxm_player::engine::meters::Meters;
 use mxm_player::engine::processor::{AudioWorker, Command, WorkerConfig};
 use mxm_player::engine::stream::ProcessorOwner;
+use mxm_player::engine::{
+    COMMAND_CAPACITY, MIDI_OUT_CAPACITY, PLUGIN_OUTPUT_CAPACITY, PluginOutput,
+};
 use mxm_player::envelope::{Envelope, negotiate, negotiate_effect};
 use mxm_player::events::input::{
     PRODUCER_QUEUE_CAPACITY, PanicEpoch, Payload, SourceId, TimedEvent,
 };
-use mxm_player::host::{
-    HostAudioProcessor, HostMainThread, HostShared, MxmHost, PlayerHostState, host_info,
-};
+use mxm_player::host::{HostAudioProcessor, MxmHost, PlayerHostState};
 use mxm_player::midi::{OutPanic, OutgoingEvent};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -181,10 +181,10 @@ impl Harness {
             )
             .map_err(|e| e.to_string())?;
 
-        let (command_producer, command_consumer) = rtrb::RingBuffer::new(64);
+        let (command_producer, command_consumer) = rtrb::RingBuffer::new(COMMAND_CAPACITY);
         let (return_producer, return_consumer) = rtrb::RingBuffer::new(1);
-        let (output_producer, output_consumer) = rtrb::RingBuffer::new(4096);
-        let (midi_out_producer, midi_out_consumer) = rtrb::RingBuffer::new(4096);
+        let (output_producer, output_consumer) = rtrb::RingBuffer::new(PLUGIN_OUTPUT_CAPACITY);
+        let (midi_out_producer, midi_out_consumer) = rtrb::RingBuffer::new(MIDI_OUT_CAPACITY);
 
         let mut input_producers = Vec::new();
         let mut input_consumers = Vec::new();
@@ -214,7 +214,7 @@ impl Harness {
 
         // Where the worker hands back a consumed sequencer state, so it is never dropped on the
         // audio thread. As deep as the command queue, exactly as the engine sizes it.
-        let (retire_producer, retire_consumer) = rtrb::RingBuffer::new(64);
+        let (retire_producer, retire_consumer) = rtrb::RingBuffer::new(COMMAND_CAPACITY);
 
         // The chain, built as the engine builds it: each effect activated for the same block
         // bound as the source, its processor owned by a stage, its return queue kept here.
@@ -360,9 +360,10 @@ impl Harness {
         &self.buffer
     }
 
-    /// The largest absolute sample of the last render.
+    /// The largest absolute sample of the last render, **NaN if any sample is not finite**, so a
+    /// broken render fails every comparison a test makes on it (`mxm_player::engine::audio::peak`).
     pub fn peak(&self) -> f32 {
-        self.buffer.iter().fold(0.0f32, |p, s| p.max(s.abs()))
+        mxm_player::engine::audio::peak(&self.buffer)
     }
 
     /// Everything the MIDI-out queue has received since the last drain.
@@ -398,30 +399,13 @@ impl Harness {
     }
 }
 
-/// A fresh instance of `plugin_id` from `entry`, with the host state it reports into.
+/// A fresh instance of `plugin_id` from `entry`, with the host state it reports into — the player's
+/// own `offline::instantiate_with_state`, so a harness instance is made the way the engine makes one.
 pub fn instantiate(
     entry: &PluginEntry,
     plugin_id: &str,
 ) -> Result<(Arc<PlayerHostState>, PluginInstance<MxmHost>), String> {
-    let factory = entry
-        .get_plugin_factory()
-        .ok_or_else(|| "no plugin factory".to_owned())?;
-    let id = factory
-        .plugin_descriptors()
-        .find(|d| d.id().map(|id| id.to_bytes()) == Some(plugin_id.as_bytes()))
-        .and_then(|d| d.id())
-        .ok_or_else(|| format!("no plugin `{plugin_id}`"))?
-        .to_owned();
-
-    let shared = Arc::new(PlayerHostState::new());
-    let for_plugin = Arc::clone(&shared);
-    let instance = PluginInstance::<MxmHost>::new(
-        move |_| HostShared::new(for_plugin),
-        |shared| HostMainThread::new(shared),
-        entry,
-        &id,
-        &host_info(),
-    )
-    .map_err(|e| e.to_string())?;
-    Ok((shared, instance))
+    mxm_player::offline::instantiate_with_state(entry, plugin_id)
+        .map(|(instance, shared)| (shared, instance))
+        .map_err(|e| e.to_string())
 }

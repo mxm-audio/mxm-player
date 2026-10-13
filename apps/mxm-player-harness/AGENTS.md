@@ -34,6 +34,15 @@ player's; this crate only drives it.
   is not a hosting bug.
 - **The settings directory is always sandboxed.** With the production configuration an app-level test
   would rewrite the settings of whoever uses the player on the same machine.
+- **`Harness::peak` is NaN for a render with any non-finite sample**, so a broken render fails every
+  comparison a test makes on it. It measures through `mxm_player::engine::audio::peak`, the rule the
+  player's own test backends use; a fold with `f32::max` reported the loudest finite sample.
+- **`host_test` is what every plugin's host tests do the same way**: `plugin_bundle` (its own bundle
+  in `target/bundled`, never another plugin's), `push_fraction` (a parameter by display name to a
+  fraction of its plain range, unsettled) and `digest` (FNV-1a over the samples' bits, which pins
+  every golden render and so must never change). A host test keeps what it does around them — its
+  skip message, settling, reading the text back. They were copied into each host test: the digest
+  seven times, the lookup twenty, the edit twelve.
 - Not test-built itself (`test = false`); it is exercised by every package that drives it.
 
 # Verification

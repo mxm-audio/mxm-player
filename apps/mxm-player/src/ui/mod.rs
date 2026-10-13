@@ -870,7 +870,7 @@ impl PlayerApp {
                     .settings_path
                     .with_file_name(format!("effect-{}.clapstate", index + 1));
                 let bytes = self.engine.capture_fx_state(index)?;
-                std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+                crate::settings::write_atomic(&path, &bytes)?;
                 Ok(format!(
                     "effect {} state dumped to {}",
                     index + 1,
@@ -5007,8 +5007,11 @@ impl PlayerApp {
     pub fn save_midi(&mut self, name: &str) -> Result<PathBuf, String> {
         let tempo = sequencer::smf::canonical_tempo(self.sequencer.tempo);
         let bytes = sequencer::smf::write(&self.sequencer.pattern, tempo);
-        let path = unique_path(&self.exports_dir, name, "mid");
-        write_atomically(&path, &bytes)?;
+        // The name is made a file name first, by the rule saved sequences and audio exports use:
+        // joined raw, `../x` would land outside the exports folder.
+        let stem = sequencer::sequence::safe_stem(name);
+        let path = unique_path(&self.exports_dir, &stem, "mid");
+        crate::settings::write_atomic(&path, &bytes)?;
 
         // **Reported on save, not only on load.** The read path has always named what it could not
         // keep; without this, a sequence saved as MIDI would lose its locks silently and the loss
@@ -7675,17 +7678,6 @@ fn unique_path(dir: &Path, stem: &str, extension: &str) -> PathBuf {
         }
     }
     first
-}
-
-/// Writes via a temporary file and a rename, so a crash mid-write cannot leave a half-written file
-/// looking like a finished one.
-fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let temp = path.with_extension("tmp");
-    std::fs::write(&temp, bytes).map_err(|e| e.to_string())?;
-    std::fs::rename(&temp, path).map_err(|e| e.to_string())
 }
 
 /// Files in `dir` with the given extension, by stem, sorted.

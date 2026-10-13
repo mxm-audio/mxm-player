@@ -39,6 +39,11 @@ pub enum Behaviour {
     /// player's effect hosting can be proved against a plugin that shares no code with the
     /// collection.
     Effect,
+    /// An effect that writes the transport's song position, in beats, into every output sample of
+    /// a block — or `-1.0` when the host gives no transport. Exists so a host test can read the
+    /// position a host reported for a block straight out of the audio, and prove its live and
+    /// offline paths report the same one (`plans/plan-architecture-audit.md` A1).
+    TransportProbe,
 }
 
 /// One audio port declaration.
@@ -340,6 +345,17 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: None,
         note_output: None,
         behaviour: Behaviour::Effect,
+    },
+    FixtureSpec {
+        id: "dk.mxm.fixture.transport-probe",
+        name: "MXM Fixture: transport probe",
+        description: "An effect whose output is the song position, in beats, the host reported for each block",
+        audio_inputs: STEREO_MAIN_IN,
+        audio_outputs: STEREO_MAIN_OUT,
+        configs: None,
+        note_input: None,
+        note_output: None,
+        behaviour: Behaviour::TransportProbe,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.effect-main-thread",

@@ -12,15 +12,12 @@ use crate::events::input::{GUI_SOURCE, MergedInput, Payload, SourceId, TimedEven
 use crate::events::output::{FixedEventBuffer, OutputRoute, classify};
 use crate::events::press::{Press, PressTable, ReleaseOutcome};
 use clack_extensions::tail::{PluginTail, TailLength};
-use clack_host::events::EventFlags;
-use clack_host::events::event_types::TransportFlags;
 use clack_host::events::event_types::{
     MidiEvent, NoteChokeEvent, NoteOffEvent, NoteOnEvent, ParamGestureBeginEvent,
     ParamGestureEndEvent, ParamModEvent, ParamValueEvent, TransportEvent,
 };
 use clack_host::prelude::*;
 use clack_host::utils::Cookie;
-use clack_host::utils::{BeatTime, SecondsTime};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -986,11 +983,7 @@ impl AudioWorker {
             }
             Dialect::Midi1 => self.push_midi(
                 time,
-                [
-                    0x90 | (press.channel & 0x0f),
-                    press.key & 0x7f,
-                    ((velocity * 127.0).round().clamp(1.0, 127.0)) as u8,
-                ],
+                crate::midi::note_on(press.channel, press.key, velocity),
             ),
         }
     }
@@ -1009,11 +1002,7 @@ impl AudioWorker {
             }
             Dialect::Midi1 => self.push_midi(
                 time,
-                [
-                    0x80 | (press.channel & 0x0f),
-                    press.key & 0x7f,
-                    ((velocity * 127.0).round().clamp(0.0, 127.0)) as u8,
-                ],
+                crate::midi::note_off(press.channel, press.key, velocity),
             ),
         }
     }
@@ -1074,13 +1063,9 @@ impl AudioWorker {
 
         let velocity = velocity.unwrap_or(0.0);
         let data = if on {
-            [
-                0x90 | (press.channel & 0x0f),
-                press.key & 0x7f,
-                ((velocity * 127.0).round().clamp(1.0, 127.0)) as u8,
-            ]
+            crate::midi::note_on(press.channel, press.key, velocity)
         } else {
-            [0x80 | (press.channel & 0x0f), press.key & 0x7f, 0]
+            crate::midi::note_off(press.channel, press.key, 0.0)
         };
 
         let event = crate::midi::OutgoingEvent {
@@ -1118,6 +1103,12 @@ impl AudioWorker {
 
         while done < total_frames {
             let frames = (total_frames - done).min(MAX_BLOCK_FRAMES as usize);
+
+            // **The chunk's transport, taken before the sequencer advances**: CLAP's process
+            // transport is the state as of the chunk's first sample, and the source and the chain
+            // are handed this one event. Read after `advance_sequencer`, it reported the chunk's
+            // *end*, one chunk ahead of what an export reports for the same sample.
+            let transport = self.transport_event();
 
             // The sequencer advances for **every** chunk, before the sleep/wake decision below.
             // A clock that stopped while the plugin slept would never reach its next boundary —
@@ -1180,7 +1171,7 @@ impl AudioWorker {
             }
 
             if source_running {
-                plugin_time += self.process_chunk(frames);
+                plugin_time += self.process_chunk(frames, &transport);
                 self.route_output_events();
                 self.steady_time += frames as u64;
             } else {
@@ -1191,8 +1182,7 @@ impl AudioWorker {
                 }
             }
 
-            // The chain, on whatever the source produced. Its transport is the same chunk's.
-            let transport = self.transport_event();
+            // The chain, on whatever the source produced, under the same chunk's transport.
             let (result, elapsed) = self.fx.run(&self.channels, frames, &transport);
             fx_time += elapsed;
             match result {
@@ -1249,42 +1239,17 @@ impl AudioWorker {
     ///
     /// **Not derived from the sequencer's clock — it is the same number.** `song_pos_beats` is the
     /// sequencer's own accumulator, which is what makes disagreement impossible rather than merely
-    /// unlikely. CLAP defines the process transport as the state *as of sample 0*, and the tempo
-    /// only ever changes between chunks, so every field here is true for the whole chunk.
+    /// unlikely. Built by [`crate::events::transport`], which the offline render uses too.
     fn transport_event(&self) -> TransportEvent {
-        let beats = self.sequencer.beats();
-        let mut flags = TransportFlags::HAS_TEMPO
-            | TransportFlags::HAS_BEATS_TIMELINE
-            | TransportFlags::HAS_SECONDS_TIMELINE
-            | TransportFlags::HAS_TIME_SIGNATURE;
-        if self.sequencer.transport().is_playing() {
-            flags |= TransportFlags::IS_PLAYING;
-        }
-
-        // 4/4, so a bar is four beats. The bar fields have to agree with the beat position rather
-        // than being plausible on their own.
-        let bar_number = (beats / 4.0).floor();
-
-        TransportEvent {
-            header: EventHeader::new_core(0, EventFlags::empty()),
-            flags,
-            song_pos_beats: BeatTime::from_float(beats),
-            song_pos_seconds: SecondsTime::from_float(self.sequencer.seconds()),
-            tempo: self.sequencer.tempo(),
-            tempo_inc: 0.0,
-            loop_start_beats: BeatTime::from_int(0),
-            loop_end_beats: BeatTime::from_int(0),
-            loop_start_seconds: SecondsTime::from_int(0),
-            loop_end_seconds: SecondsTime::from_int(0),
-            bar_start: BeatTime::from_float(bar_number * 4.0),
-            bar_number: bar_number as i32,
-            time_signature_numerator: 4,
-            time_signature_denominator: 4,
-        }
+        crate::events::transport::at(
+            self.sequencer.beats(),
+            self.sequencer.seconds(),
+            self.sequencer.tempo(),
+            self.sequencer.transport().is_playing(),
+        )
     }
 
-    fn process_chunk(&mut self, frames: usize) -> std::time::Duration {
-        let transport = self.transport_event();
+    fn process_chunk(&mut self, frames: usize, transport: &TransportEvent) -> std::time::Duration {
         self.output_events.clear();
         for channel in &mut self.channels {
             channel[..frames].fill(0.0);
@@ -1309,7 +1274,7 @@ impl AudioWorker {
                 &InputEvents::from_buffer(&self.input_events),
                 &mut OutputEvents::from_buffer(&mut self.output_events),
                 Some(self.steady_time),
-                Some(&transport),
+                Some(transport),
             )
         };
         let elapsed = started.elapsed();

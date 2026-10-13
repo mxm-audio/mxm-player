@@ -265,18 +265,11 @@ impl Sequence {
         Self::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
     }
 
-    /// Writes the sequence so that a crash mid-write cannot destroy the previous copy.
-    ///
-    /// The same temp-file-then-rename the settings use: a saved sequence is something people keep.
+    /// Writes the sequence so that a crash mid-write cannot destroy the previous copy: the settings'
+    /// own `write_atomic`, because a saved sequence is something people keep.
     pub fn save(&self, path: &Path) -> Result<(), String> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
         let text = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-
-        let temp = path.with_extension("tmp");
-        std::fs::write(&temp, text.as_bytes()).map_err(|e| e.to_string())?;
-        std::fs::rename(&temp, path).map_err(|e| e.to_string())
+        crate::settings::write_atomic(path, text.as_bytes())
     }
 }
 
@@ -318,8 +311,9 @@ pub fn list(dir: &Path) -> Vec<(String, PathBuf)> {
     found
 }
 
-/// The path a sequence called `name` takes in `dir`.
-pub fn path_for(dir: &Path, name: &str) -> PathBuf {
+/// A name made safe as a file stem: anything but letters, digits, `-` and `_` becomes `-`, and a name
+/// with nothing left in it is `sequence`. Saved sequences and exported audio are both named by it.
+pub fn safe_stem(name: &str) -> String {
     let safe: String = name
         .chars()
         .map(|c| {
@@ -330,11 +324,16 @@ pub fn path_for(dir: &Path, name: &str) -> PathBuf {
             }
         })
         .collect();
-    let safe = if safe.trim_matches('-').is_empty() {
+    if safe.trim_matches('-').is_empty() {
         "sequence".to_owned()
     } else {
         safe
-    };
+    }
+}
+
+/// The path a sequence called `name` takes in `dir`.
+pub fn path_for(dir: &Path, name: &str) -> PathBuf {
+    let safe = safe_stem(name);
     dir.join(format!("{safe}.{EXTENSION}"))
 }
 

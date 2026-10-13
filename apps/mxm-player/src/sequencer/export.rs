@@ -220,21 +220,7 @@ pub fn default_dir() -> std::path::PathBuf {
 /// opening it. This is what the design relies on for tempo — the `acid` chunk is a bonus whose
 /// interoperability is unverified.
 pub fn file_name(stem: &str, tempo: f64, bars: u32) -> String {
-    let safe: String = stem
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    let safe = if safe.trim_matches('-').is_empty() {
-        "sequence".to_owned()
-    } else {
-        safe
-    };
+    let safe = super::sequence::safe_stem(stem);
     format!("{safe}_{}bpm_{bars}bars", tempo.round() as u32)
 }
 
@@ -376,13 +362,16 @@ pub fn render_offline(
             block_size: BLOCK,
             total_frames: total as u64,
             state: Some(state),
+            // The transport live playback gives the plugin, from the sequence's first beat: a synced
+            // LFO or delay follows it here exactly as it does while the sequence plays.
+            tempo: Some(tempo),
         },
         &events,
     )
     .map_err(|e| e.to_string())?;
     // Then the chain, every effect that is on with its own patch: an export that skipped it
     // would sound like the instrument alone, which is not what was being listened to.
-    let result = crate::offline::through_effects(result, &effects, sample_rate, BLOCK)
+    let result = crate::offline::through_effects(result, &effects, sample_rate, BLOCK, Some(tempo))
         .map_err(|e| e.to_string())?;
 
     let channels = result.channels.len().max(1);

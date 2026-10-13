@@ -103,7 +103,7 @@ impl SessionControl {
     pub fn peak(&self) -> f32 {
         self.captured
             .lock()
-            .map(|c| c.iter().fold(0.0f32, |p, s| p.max(s.abs())))
+            .map(|c| super::audio::peak(&c))
             .unwrap_or(0.0)
     }
 
@@ -303,5 +303,21 @@ impl Drop for SteppedStream {
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_session_render_with_a_nan_in_it_does_not_peak_as_healthy() {
+        let control = SessionControl::new(Clock::virtual_clock(), 64);
+        control
+            .captured
+            .lock()
+            .unwrap()
+            .extend([0.25, f32::NAN, 0.5]);
+        assert!(control.peak().is_nan(), "peaked at {}", control.peak());
     }
 }

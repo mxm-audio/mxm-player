@@ -11,6 +11,7 @@
 pub mod input;
 pub mod output;
 pub mod press;
+pub mod transport;
 
 pub use input::{
     EMERGENCY_RESERVE, MAX_INPUT_PRODUCERS, MergedInput, PRODUCER_QUEUE_CAPACITY, PanicEpoch,

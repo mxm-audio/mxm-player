@@ -270,6 +270,20 @@ impl AudioStream for CpalStream {
     }
 }
 
+/// The largest absolute sample of a test render — **NaN if any sample is not finite.**
+///
+/// A fold with `f32::max` drops NaN and reports the loudest finite sample, so a half-NaN render
+/// would pass every "it sounded" (`> x`) and "it is silent" (`== 0.0`) check a test makes on it.
+/// NaN fails every comparison instead. The test backends and `mxm-player-harness` measure through
+/// this one function; `mxm_measure::level::peak` is the same rule, and the player cannot take that
+/// crate outside its dev-dependencies.
+pub fn peak(samples: &[f32]) -> f32 {
+    samples
+        .iter()
+        .try_fold(0.0f32, |peak, s| s.is_finite().then(|| peak.max(s.abs())))
+        .unwrap_or(f32::NAN)
+}
+
 /// What [`FakeBackend::build`] says when told to refuse.
 pub const REFUSED_BUILD: &str = "the fake backend refused to build a stream";
 
@@ -327,7 +341,7 @@ impl FakeBackend {
     pub fn peak(&self) -> f32 {
         self.captured
             .lock()
-            .map(|samples| samples.iter().fold(0.0f32, |peak, s| peak.max(s.abs())))
+            .map(|samples| peak(&samples))
             .unwrap_or(0.0)
     }
 
@@ -513,6 +527,22 @@ impl Drop for FakeStream {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_render_with_a_nan_in_it_does_not_peak_as_healthy() {
+        // `f32::max` drops NaN, so a fold over it reports the loudest finite sample: a half-NaN
+        // render would pass every "it sounded" and "it is silent" check a test makes on the peak.
+        let backend = FakeBackend::new();
+        backend
+            .captured
+            .lock()
+            .unwrap()
+            .extend([0.25, f32::NAN, 0.5]);
+        assert!(backend.peak().is_nan(), "peaked at {}", backend.peak());
+        backend.clear_capture();
+        backend.captured.lock().unwrap().extend([0.25, -0.5]);
+        assert_eq!(backend.peak(), 0.5);
+    }
 
     /// The text CPAL produced on Windows the day the device was taken away — kept verbatim, so
     /// the test says what the status bar used to show.

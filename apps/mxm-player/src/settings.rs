@@ -130,27 +130,11 @@ impl Settings {
         }
     }
 
-    /// Writes the settings so that a crash mid-write cannot destroy the previous copy.
-    ///
-    /// Serialise to a sibling temporary file, flush and close it, then atomically replace.
+    /// Writes the settings so that a crash mid-write cannot destroy the previous copy
+    /// ([`write_atomic`]).
     pub fn save(&self, path: &Path) -> Result<(), String> {
         let text = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-
-        let temp = path.with_extension("json.tmp");
-        {
-            let mut file = std::fs::File::create(&temp).map_err(|e| e.to_string())?;
-            file.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
-            // Flushed and synced before the rename, so the replacement can only ever expose a
-            // complete file.
-            file.flush().map_err(|e| e.to_string())?;
-            file.sync_all().map_err(|e| e.to_string())?;
-        }
-
-        replace_with_retry(&temp, path)
+        write_atomic(path, text.as_bytes())
     }
 
     /// The settings file's location.
@@ -160,6 +144,32 @@ impl Settings {
             .join("mxm-player")
             .join("settings.json")
     }
+}
+
+/// Writes `bytes` to `path` so that a crash mid-write cannot destroy the previous copy.
+///
+/// To a sibling temporary file (`<name>.<ext>.tmp`), flushed and synced before the rename so the
+/// replacement can only ever expose a complete file, then atomically replaced, with a brief retry on
+/// a transient sharing violation ([`replace_with_retry`]). **Every file the player keeps for
+/// somebody is written here** — settings, saved sequences, `.mid` files, a session's state dump — so
+/// none of them is crash-safe in a weaker sense than the others. Audio goes through
+/// `mxm_audio_file::write_atomic`, its encoder's own.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    let mut temp_name = path.file_name().unwrap_or_default().to_os_string();
+    temp_name.push(".tmp");
+    let temp = path.with_file_name(temp_name);
+    {
+        let mut file = std::fs::File::create(&temp).map_err(|e| e.to_string())?;
+        file.write_all(bytes).map_err(|e| e.to_string())?;
+        file.flush().map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+    }
+
+    replace_with_retry(&temp, path)
 }
 
 /// Atomically replaces `target` with `temp`, retrying briefly on a transient sharing violation.
@@ -177,10 +187,10 @@ pub fn replace_with_retry(temp: &Path, target: &Path) -> Result<(), String> {
         }
     }
 
-    // Give up and keep the old file: a stale setting is better than none at all.
+    // Give up and keep the old file: a stale copy is better than none at all.
     let _ = std::fs::remove_file(temp);
     Err(format!(
-        "could not replace {}: {last} (the previous settings were kept)",
+        "could not replace {}: {last} (the previous copy was kept)",
         target.display()
     ))
 }
