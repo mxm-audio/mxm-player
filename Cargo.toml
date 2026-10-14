@@ -29,6 +29,7 @@ mxm-audio-file = { git = "https://github.com/mxm-audio/mxm-kit", branch = "main"
 mxm-audio-file-decode = { git = "https://github.com/mxm-audio/mxm-kit", branch = "main" }
 mxm-control-map = { git = "https://github.com/mxm-audio/mxm-kit", branch = "main" }
 mxm-measure = { git = "https://github.com/mxm-audio/mxm-kit", branch = "main" }
+mxm-rng = { git = "https://github.com/mxm-audio/mxm-kit", branch = "main" }
 mxm-player = { path = "apps/mxm-player" }
 mxm-player-harness = { path = "apps/mxm-player-harness" }
 mxm-ui = { git = "https://github.com/mxm-audio/mxm-kit", branch = "main" }

@@ -68,6 +68,8 @@ walkdir    = "=2.5.0"
 # Writes exports and the session driver's captures. The encoder only: the player decodes nothing, so
 # no MPL-2.0 code is in its graph under any build grouping. `crates/mxm-audio-file/AGENTS.md`.
 mxm-audio-file = { workspace = true }
+# The sequencer's generator: its xorshift64, bit-exact.
+mxm-rng = { workspace = true }
 
 # Linux only: a plugin's library is opened with RTLD_NODELETE (`src/entry.rs`), so it is never
 # unmapped under a thread that still holds its destructors. Both at the versions the tree already

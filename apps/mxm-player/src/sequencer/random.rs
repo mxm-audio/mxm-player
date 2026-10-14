@@ -28,9 +28,11 @@
 //! slide only turns a note that already starts into a legato one. So the rhythm that was tuned is
 //! still where the pitches change, whatever articulation lands on it.
 //!
-//! Seeded and deterministic, so a test can assert on what it produces. A tiny xorshift rather than
-//! a dependency: this needs unpredictability of the "not the same sixteen notes every time" kind,
-//! not of the cryptographic kind.
+//! Seeded and deterministic, so a test can assert on what it produces. `mxm-rng`'s xorshift64 rather
+//! than a general-purpose generator: this needs unpredictability of the "not the same sixteen notes
+//! every time" kind, not of the cryptographic kind.
+
+use mxm_rng::Xorshift64;
 
 use super::pattern::{MAX_STEPS_PER_BAR, Pattern, STEPS_PER_BEAT};
 
@@ -94,36 +96,18 @@ const TIE_IN_16: u32 = 3;
 /// invariant the editing funnels guard.
 const SLIDE_IN_16: u32 = 2;
 
-/// A small xorshift. Deterministic for a seed, which is what makes the output testable.
-pub struct Rng(u64);
+/// The generator for `seed`: `mxm-rng`'s xorshift64. Deterministic for a seed, which is what makes
+/// the output testable; `| 1` keeps zero, xorshift's fixed point, from ever being the state.
+fn generator(seed: u64) -> Xorshift64 {
+    Xorshift64::from_state(seed | 1)
+}
 
-impl Rng {
-    pub fn new(seed: u64) -> Self {
-        // Zero is a fixed point of xorshift, so it must never be the state.
-        Self(seed | 1)
+/// A value in `0..bound`, from the high half of a draw.
+fn bounded(rng: &mut Xorshift64, bound: u32) -> u32 {
+    if bound == 0 {
+        return 0;
     }
-
-    fn next_u64(&mut self) -> u64 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        self.0 = x;
-        x
-    }
-
-    /// A value in `0..bound`.
-    fn below(&mut self, bound: u32) -> u32 {
-        if bound == 0 {
-            return 0;
-        }
-        (self.next_u64() >> 32) as u32 % bound
-    }
-
-    /// A value in `[0, 1)`, from the top 53 bits so every value is exact.
-    fn unit(&mut self) -> f64 {
-        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
-    }
+    rng.next_u32() % bound
 }
 
 /// Generates **one bar** of a monophonic pattern in C Dorian, `steps` long.
@@ -133,7 +117,7 @@ impl Rng {
 /// generating sixteen and writing them into a bar of twelve would either overflow into the next
 /// bar or silently re-bar the music.
 pub fn sequence(seed: u64, steps: usize) -> Pattern {
-    let mut rng = Rng::new(seed);
+    let mut rng = generator(seed);
     let mut pattern = Pattern::sized(1, steps);
     let steps = pattern.len();
 
@@ -153,7 +137,7 @@ pub fn sequence(seed: u64, steps: usize) -> Pattern {
             // like that — and neither makes a sound, which would make ties look broken in the one
             // place they are demonstrated. An *empty* tie, so it lengthens the note rather than
             // starting a run of its own.
-            if sounding && rng.below(16) < TIE_IN_16 {
+            if sounding && bounded(&mut rng, 16) < TIE_IN_16 {
                 pattern.set_tied(step, true);
                 continue;
             }
@@ -164,7 +148,7 @@ pub fn sequence(seed: u64, steps: usize) -> Pattern {
         let note = note(&mut rng, lean);
         // **A slide: the gate stays open, the pitch moves.** Drawn only while something sounds — a
         // slide from silence is the state the editing funnels refuse, for the same reason.
-        if sounding && rng.below(16) < SLIDE_IN_16 {
+        if sounding && bounded(&mut rng, 16) < SLIDE_IN_16 {
             pattern.set_tied(step, true);
         }
         pattern.toggle(step, note);
@@ -184,7 +168,7 @@ pub fn is_in_c_dorian(note: u8) -> bool {
 /// A bar with nothing in it is a press that did nothing. The mix lands there about once in twenty
 /// thousand rolls, so it rolls again. The fallback, a single note on the first step, is there so
 /// the loop is bounded and not because it is expected to run.
-fn note_starts(rng: &mut Rng, steps: usize) -> u32 {
+fn note_starts(rng: &mut Xorshift64, steps: usize) -> u32 {
     for _ in 0..64 {
         let (starts, _) = mixed_rhythm(rng, steps);
         if starts != 0 {
@@ -198,11 +182,11 @@ fn note_starts(rng: &mut Rng, steps: usize) -> u32 {
 /// copying every [`BLOCK_STEPS`]-step block from one of them, picked uniformly.
 ///
 /// Returns the mixed bar and the sources, so a test can check every block against them.
-fn mixed_rhythm(rng: &mut Rng, steps: usize) -> (u32, [u32; RHYTHM_SOURCES]) {
+fn mixed_rhythm(rng: &mut Xorshift64, steps: usize) -> (u32, [u32; RHYTHM_SOURCES]) {
     let (fewest, most) = pulse_range(steps);
     let sources: [u32; RHYTHM_SOURCES] = std::array::from_fn(|_| {
-        let pulses = fewest + rng.below((most - fewest + 1) as u32) as usize;
-        let rotation = rng.below(steps as u32) as usize;
+        let pulses = fewest + bounded(rng, (most - fewest + 1) as u32) as usize;
+        let rotation = bounded(rng, steps as u32) as usize;
         rotate(euclidean(pulses, steps), rotation, steps)
     });
 
@@ -210,7 +194,7 @@ fn mixed_rhythm(rng: &mut Rng, steps: usize) -> (u32, [u32; RHYTHM_SOURCES]) {
     for start in (0..steps).step_by(BLOCK_STEPS) {
         let end = (start + BLOCK_STEPS).min(steps);
         let block = ((1u32 << end) - 1) & !((1u32 << start) - 1);
-        let source = sources[rng.below(RHYTHM_SOURCES as u32) as usize];
+        let source = sources[bounded(rng, RHYTHM_SOURCES as u32) as usize];
         mixed |= source & block;
     }
     (mixed, sources)
@@ -300,8 +284,8 @@ fn tone_chances(lean: f64) -> [f64; 7] {
 
 /// A note for a step with this lean: a tone drawn from [`tone_chances`], in an octave drawn
 /// uniformly.
-fn note(rng: &mut Rng, lean: f64) -> u8 {
-    let draw = rng.unit();
+fn note(rng: &mut Xorshift64, lean: f64) -> u8 {
+    let draw = rng.unit_f64();
     let chances = tone_chances(lean);
     let mut below = 0.0;
     let tone = chances
@@ -311,7 +295,7 @@ fn note(rng: &mut Rng, lean: f64) -> u8 {
             draw < below
         })
         .unwrap_or(C_DORIAN.len() - 1);
-    let octave = rng.below(u32::from(OCTAVES)) as u8;
+    let octave = bounded(rng, u32::from(OCTAVES)) as u8;
     ROOT + octave * 12 + C_DORIAN[tone]
 }
 
@@ -468,7 +452,7 @@ mod tests {
     #[test]
     fn every_two_step_block_comes_from_one_of_the_three_rhythms() {
         for steps in 1..=MAX_STEPS_PER_BAR {
-            let mut rng = Rng::new(0xB10C);
+            let mut rng = generator(0xB10C);
             for _ in 0..500 {
                 let (mixed, sources) = mixed_rhythm(&mut rng, steps);
                 for start in (0..steps).step_by(BLOCK_STEPS) {
