@@ -38,6 +38,9 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
   every picker; a refusal without a reason is a bug, and so is a wrong one: a plugin that cannot be
   created is `Refusal::NotInstantiable` with the factory's reason. **`offline::instantiate_with_state`
   is the one place an instance is made** (engine, offline, discovery, `inspect`, the harness). [NOTES.md § Envelope](NOTES.md#the-compatibility-envelope-is-enforceable-and-refusals-carry-reasons) · [§ One instance path](NOTES.md#one-instance-path-one-transport-one-atomic-write)
+- **The live and offline paths share every rule both encode** (the transport, the note-on encoder): a new
+  one joins them the same way, and channel adaptation is shared before any effect wider than stereo is
+  admitted. Two loops, by design. [NOTES.md § Two hosting loops](NOTES.md#two-hosting-loops-and-the-rules-they-share)
 - **The chain** (`src/engine/fx.rs`): an effect has one main input and one main output. Add, remove and move
   stop the worker, edit the slots and restart, the source untouched; at most `MAX_FX`; effects activate
   after the source and deactivate before it on every path. **Off is uncalled**: input passes to the bit;
