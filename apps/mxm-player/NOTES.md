@@ -2153,3 +2153,23 @@ to disagree.
   raw name, so `../x` left the exports folder; `sequence::safe_stem` is the one sanitiser.
 - **`engine::audio::peak` reported the loudest finite sample**, so a NaN render passed every check
   built on it. It is NaN for a render with any non-finite sample, and the harness measures through it.
+
+## Two hosting loops, and the rules they share
+
+The live worker (`engine/processor.rs`, `engine/fx.rs`) and the offline renderer (`offline.rs`) once
+mirrored about 350 lines, and two defects came from the mirror: export passed no transport, and the
+offline note-on had no velocity floor. Both were fixed by **sharing the rule**, not the loop: one
+transport (`events::transport`) and one note-on encoder (`midi::note_on`), called by both paths.
+
+The architecture audit's O8 (owner-approved 2026-10-13: *after A1/A2, decide whether the shared pieces
+suffice*) read what is still written twice, on 2026-10-14, and decided **they suffice**:
+
+| Piece | Live | Offline | Standing |
+|---|---|---|---|
+| Channel adaptation into a plugin's input | `FxStage::adapt_input` | `adapt_channels` | Agree on every layout the player admits; they differ only for an input wider than its source other than mono into stereo, and `envelope.rs` admits only mono or stereo effects |
+| The process call, status and tail | `processor.rs`, `fx.rs` | `render_inner`, `run_effect` | Different by design: a realtime loop with commands, live input, the sequencer, event overtaking and tails across chunks, against rendering a finished list to the end |
+| Events for an effect | `push_param_mod` | `push_effect_event` | Equivalent: parameter changes only |
+
+One loop serving both would carry the realtime state machine into every offline render, or the
+reverse, and the player takes no new features (its work goes into newDAWn, 2026-10-07). The plan is
+the workspace's `ops/plans/plan-player-hosting.md`.
