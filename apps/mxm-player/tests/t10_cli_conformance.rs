@@ -482,6 +482,16 @@ fn covered(label: &str, dump: &PlayerState) -> bool {
     {
         return true;
     }
+    // A picker's refused plugins sit in a submenu named with their count; it opens a list that only
+    // reports (every row disabled, with its reason), and the dump's `found` carries each refusal
+    // and its words - so the count must be the dump's.
+    let refused = dump.found.iter().filter(|f| !f.supported).count();
+    let not_effects = dump.found.iter().filter(|f| !f.effect).count();
+    if label.starts_with(&format!("{refused} cannot be loaded"))
+        || label.starts_with(&format!("{not_effects} cannot be an effect"))
+    {
+        return true;
+    }
     // MIDI port checkboxes carry port names - environment, same argument as the EXEMPT class.
     if dump
         .midi
