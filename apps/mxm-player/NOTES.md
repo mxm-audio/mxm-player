@@ -282,6 +282,28 @@ plugin wedge after `WEDGE_TIMEOUT`.
 `service_commands` deliberately does **not** drain the input queues: `render` is what converts
 merged events, so draining without rendering would discard them silently.
 
+### Closing the player destroys every plugin before the process ends
+
+Found 2026-10-21, when the owner closed the player with Pigments loaded and it never ended: the
+window gone, the console still waiting, 2 GB held, and a forced kill not finishing either. The
+stack of its one remaining thread showed the process exit itself: Windows had ended every other
+thread and was running each library's shutdown, and Pigments' engine library (loaded by its VST3
+shell) ran a static destructor that waits for a thread of its own, which no longer existed.
+
+Pigments was not at fault for still being there. Released as the VST3 rules say (the factory
+released, `ExitDll`, the library freed) it unloads cleanly and the process ends. The player never
+released it: the engine's fields dropped in declaration order, the instance before the stream that
+held its audio processor, and clack-host's `PluginInstance` leaks an instance whose processor is
+still out, so that it never reaches the audio thread. No plugin was destroyed and no library freed
+at close; most plugins just don't wait in their shutdown, so it went unseen.
+
+`impl Drop for Engine` now ends in order: the editors closed, `stop_now` (every processor handed
+back and each instance deactivated), then the effects and the instrument dropped, each destroyed
+and its library released, a VST3 module's `ExitDll` called while its threads still run. A wedged
+engine has already leaked its plugins on purpose and is left alone. `tests/t15_exit.rs` holds it
+with mxm-mono-01: its library must be gone from the process once the app is dropped (it failed
+before the change). newDAWn's engine already stopped and deactivated in its own `Drop`.
+
 ### A wedged engine never reports a clean stop
 
 `enter_wedged` takes the stream, so any "nothing to stop" shortcut keyed on `stream.is_none()` will

@@ -1621,6 +1621,31 @@ impl Default for Engine {
     }
 }
 
+/// **An orderly end, so every plugin is destroyed and its library released while the process still
+/// runs.** Left to field order, the instance went before the stream that held its audio processor,
+/// and clack-host leaks an instance whose processor is still out (to keep it off the audio thread):
+/// no plugin was ever destroyed, nor its library unloaded, before the process exited. Windows then
+/// runs each library's shutdown after ending every other thread, and a plugin whose shutdown waits
+/// for a thread of its own (Pigments, 2026-10-21) hangs the exit for good, past even a kill.
+///
+/// So: the editors closed, audio stopped and every processor handed back, then the effects and the
+/// instrument dropped, each destroyed and its library released (a VST3 module's `ExitDll` called).
+/// A wedged engine has already leaked its plugins on purpose and is left alone.
+impl Drop for Engine {
+    fn drop(&mut self) {
+        if self.is_wedged() {
+            return;
+        }
+        self.close_all_editors();
+        if self.stop_now().is_err() {
+            return;
+        }
+        self.fx.clear();
+        self.fx_returns.clear();
+        self.loaded = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

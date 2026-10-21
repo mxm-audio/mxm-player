@@ -65,6 +65,10 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
 - **`PlayerApp::service` is the one servicing implementation**, window and headless; never a second copy.
   The session backend services commands whenever not rendering and never drains input queues there.
   [NOTES.md § Servicing](NOTES.md#servicing-is-one-implementation-called-from-two-places) · [§ Advancement](NOTES.md#audio-advancement-and-command-servicing-are-separate)
+- **The engine ends in order** (`impl Drop for Engine`): editors closed, audio stopped and every
+  processor handed back, then the effects and the instrument dropped, so each plugin is destroyed
+  and its library released while the process runs; clack-host leaks an instance whose processor
+  is still out. Held by `tests/t15_exit.rs`. [NOTES.md § Exit](NOTES.md#closing-the-player-destroys-every-plugin-before-the-process-ends)
 - **A wedged engine never reports a clean stop**: `Engine::stop_now` checks wedged on entry and after
   polling; a Stop that did not fit is retried, never `Ok`. [NOTES.md § Wedged](NOTES.md#a-wedged-engine-never-reports-a-clean-stop)
 - **A dead stream is neither wedged nor stopped**: errors go through `audio::describe`; `Engine::try_reconnect`
@@ -194,7 +198,7 @@ count**, since a filter matching nothing passes. [NOTES.md § Per change](NOTES.
 | `src/cli.rs` | `--test t9_cli` and `--test t10_cli_conformance` |
 | `src/control_map/` or the collection standard/product maps | `--lib control_map` and `--test t5_control_map`. Its inventory sweep of every `bundler.toml` product map left at the split: each product's `cargo xtask bundle` now checks its map (mxm-kit's `control_maps::check`) |
 | The effect chain | `--test t11_fx_chain` and `--test t13_effect_locks`; for one effect, its own `cargo test -p <effect>-host-tests --test effect_chain`, run in that effect's repository |
-| `src/host/`, `src/engine/`, `envelope.rs`, `discovery.rs` | Layer 1 below: `p0_envelope`, `p1_engine`, `p2_playing`, `p3_testable`, `verification`, and mxm-mono-01's bit-exact hosting proof `cargo test -p mxm-mono-01-host-tests --test hosting`, run in the mxm-mono-01 repository |
+| `src/host/`, `src/engine/`, `envelope.rs`, `discovery.rs` | Layer 1 below: `p0_envelope`, `p1_engine`, `p2_playing`, `p3_testable`, `verification`, `t15_exit`, and mxm-mono-01's bit-exact hosting proof `cargo test -p mxm-mono-01-host-tests --test hosting`, run in the mxm-mono-01 repository |
 | Floating editor windows | `--test t7_editor`. `editor_resize` needs every product's bundle, so it is newdawn-workspace's [`collection-tests/editor_resize.rs`](https://github.com/mxm-audio/newdawn-workspace/blob/main/collection-tests/editor_resize.rs) |
 | One synth, its plugin or its DSP crate | That crate's own tests, then `cargo test -p <synth>-host-tests` (its `behaviour` and `golden_audio`) if the change is audible, both run in that synth's repository. Never the sequencer files |
 
