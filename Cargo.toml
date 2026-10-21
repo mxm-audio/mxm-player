@@ -35,6 +35,9 @@ mxm-player-harness = { path = "apps/mxm-player-harness" }
 mxm-ui = { git = "https://github.com/mxm-audio/mxm-kit", branch = "main" }
 mxm-vst3-host = { git = "https://github.com/mxm-audio/mxm-kit", branch = "main" }
 mxm-xtask = { git = "https://github.com/mxm-audio/mxm-kit", branch = "main" }
+# tutti, the open audio project format: a player setup saved as a project (the owner, 2026-10-21).
+tutti = { git = "https://github.com/mxm-audio/tutti", branch = "main" }
+tutti-fs = { git = "https://github.com/mxm-audio/tutti", branch = "main" }
 
 [profile.release]
 lto = "thin"

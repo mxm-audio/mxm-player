@@ -35,6 +35,9 @@ pub struct PlayerState {
     pub found: Vec<FoundState>,
     /// The most recent status line, if any.
     pub status: Option<String>,
+    /// The tutti project the player has open, a save under its name going over it: its folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     /// The tail of the plugin's own log output.
     pub log: Vec<String>,
     /// Wall-clock derived, and therefore never reproducible. Excluded from comparisons.

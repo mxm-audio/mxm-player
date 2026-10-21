@@ -1701,6 +1701,43 @@ so the code stopped deciding it.
   patches' loudness, so it is a choice rather than a policy. A silent render is never scaled: that
   would be a division by zero turning digital black into full-scale noise.
 
+### A tutti project is the whole setup
+
+The owner asked for it on 2026-10-21 ("Can you implement it for the player as well?"; "audio
+plugins, effects plugins, musical data"), as the second program after newDAWn to read and write the
+open project format, so a sound made in the player opens in the DAW and back. What it decided:
+
+- **Beside the sequence file, not instead of it.** A `.seq.json` deliberately holds no patch: it is
+  the fixture every plugin's host tests compare instruments with. A project is the opposite, the
+  whole setup with its sound, so the two stay apart.
+- **Notes first, the player's own sequence beside them.** Every program plays notes; only the player
+  knows ties as ties, the shape of its bars and parameter locks, which have no plain form in notes.
+  The extension carries those exactly, and is used only while the notes are still the ones it
+  describes: notes another program changed win, read through the `.mid` grid rules, and the locks
+  saved with the old notes are left out, said so. One rule for notes, `smf::note_spans` and
+  `smf::from_notes`, shared with the MIDI file, so the two formats never disagree.
+- **Write back only what was read whole.** The track the player owns is updated in place by id, so a
+  newDAWn song keeps its other tracks and its own data when the player saves over it. When the
+  player couldn't read the project whole (a plugin not installed here, a device it doesn't host,
+  notes off the grid, more than one part or pattern, a tempo or meter that changes, another `ppq`),
+  saving over it would lose that, so the save is refused with the reason and a new name makes a new
+  project. A new project never takes a folder that exists.
+- **Read whole means written back the same.** A note that stays where it was keeps its own velocity,
+  release and another program's data on it, so velocities the sequencer plays at one level survive a
+  save; notes the grid would move, shorten or merge stop a save over the project; another program's
+  loop is left as it was; and a pattern longer than `project::MAX_BARS` is refused before anything
+  is sized from it (the code review of 2026-10-21). A new project's folder name becomes the name
+  field, so `Line-2` saves over `Line-2`.
+- **What the format's crate does, the player doesn't.** The folder, the index, the README, the
+  commit and the dependency list are tutti's `Project::save`; the player gave tutti four things it
+  had to repeat (the dependency upkeep, constructors with the spec's defaults, track lookup, native
+  ids), which tutti now does for every writer (tutti's `NOTES.md`, 2026-10-21).
+
+Found on the way, in the MIDI reader the projects now share: an imported pattern was sized from
+ticks before they were scaled to the player's division, so a file at another division got ten times
+the bars, and a run tied to the very end gained an empty bar after it; and the tie gates were sized
+to the first sixteen steps, so a run tied past step sixteen read back untied. Each has its test.
+
 ### MIDI is the interchange format; JSON is the fixture format
 
 They are not competing. `.mid` goes into a DAW — what a person asked for. `.seq.json` is readable,

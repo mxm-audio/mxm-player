@@ -22,6 +22,7 @@ pub mod notifier;
 pub mod offline;
 pub mod ownership;
 pub mod params;
+pub mod project;
 pub mod sequencer;
 pub mod session;
 pub mod settings;

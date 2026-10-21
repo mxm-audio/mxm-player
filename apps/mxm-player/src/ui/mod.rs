@@ -487,6 +487,12 @@ pub struct PlayerApp {
     /// Whether a rendered export is peak-normalised. On by default: right for making samples, and
     /// one click away from off for comparing patch levels.
     normalise_export: bool,
+    /// The tutti project the player opened or saved last: a save under its name goes over it
+    /// (`crate::project`).
+    project: Option<crate::project::OpenProject>,
+    /// The projects Load offers, and when they were last listed: reading the exports folder and
+    /// each folder in it is not a thing to do every frame.
+    projects_listed: Option<(std::time::Instant, Vec<(String, PathBuf)>)>,
 }
 
 impl PlayerApp {
@@ -900,6 +906,15 @@ impl PlayerApp {
             ("savemid", [name]) => self
                 .save_midi(name)
                 .map(|path| format!("saved {}", path.display())),
+            // The whole setup as a tutti project, and back: by name beside the exports, or a path.
+            ("saveproject", [name]) => self
+                .save_project(name)
+                .map(|path| format!("saved {}", path.display())),
+            ("openproject", [wanted]) => {
+                let folder = self.project_folder(wanted);
+                self.open_project(&folder)?;
+                Ok(self.status.clone().unwrap_or_default())
+            }
             // The keyboard's octave, absolute — the same act the -/+ buttons and the octave keys
             // step through.
             ("octave", [n]) => n
@@ -1025,7 +1040,10 @@ impl PlayerApp {
                  octave <n> | panel <settings|parameters> <open|closed> | \
                  theme <light|dark|system> | panic | rescan | \
                  sustain <on|off> | normalise <on|off> | bend <amount> | loadseq <name> | \
-                 cc <controller> <value> | export <name> | save <name> | savemid <name> |                  fx add <plugin> | fx remove <n> | fx move <from> <to> | fx on <n> |                  fx off <n> | fx editor <n> | fx dumpstate <n> | fx loadstate <n>"
+                 cc <controller> <value> | export <name> | save <name> | savemid <name> | \
+                 saveproject <name> | openproject <name|folder> | \
+                 fx add <plugin> | fx remove <n> | fx move <from> <to> | fx on <n> | \
+                 fx off <n> | fx editor <n> | fx dumpstate <n> | fx loadstate <n>"
                     .to_owned(),
             ),
         }
@@ -1104,7 +1122,8 @@ impl PlayerApp {
         };
         let Some(digits) = prefix.strip_prefix("fx") else {
             return Err(format!(
-                "`{prefix}` is not a target; write `fx<n>:<parameter>` for an effect, or the                  parameter alone for the instrument"
+                "`{prefix}` is not a target; write `fx<n>:<parameter>` for an effect, or the \
+                 parameter alone for the instrument"
             ));
         };
         let index = self.cli_fx_index(digits)?;
@@ -1697,6 +1716,8 @@ impl PlayerApp {
             sequence_name: "sequence".to_owned(),
             sequence_problems: Vec::new(),
             normalise_export: true,
+            project: None,
+            projects_listed: None,
             status: None,
             log_lines: Vec::new(),
             latency: None,
@@ -1798,7 +1819,8 @@ impl PlayerApp {
             if ui
                 .add(toggle_button(ui, "Settings", !settings_collapsed))
                 .on_hover_text(
-                    "Show the plugin browser, audio device, MIDI and state panel. Collapsing it                      makes room for a plugin's own interface beside the player.",
+                    "Show the plugin browser, audio device, MIDI and state panel. Collapsing it \
+                     makes room for a plugin's own interface beside the player.",
                 )
                 .clicked()
             {
@@ -1811,7 +1833,8 @@ impl PlayerApp {
             if ui
                 .add(toggle_button(ui, "Parameters", !parameters_collapsed))
                 .on_hover_text(
-                    "Show the parameter list. Collapsing it shrinks the player to the transport                      and keyboard, which never collapse.",
+                    "Show the parameter list. Collapsing it shrinks the player to the transport \
+                     and keyboard, which never collapse.",
                 )
                 .clicked()
             {
@@ -1868,7 +1891,8 @@ impl PlayerApp {
         if ui
             .button(label)
             .on_hover_text(
-                "The instrument's own interface, in its own window. The parameter list stays                  available either way, and an effect's editor is opened from its own strip.",
+                "The instrument's own interface, in its own window. The parameter list stays \
+                 available either way, and an effect's editor is opened from its own strip.",
             )
             .clicked()
         {
@@ -2329,6 +2353,10 @@ impl PlayerApp {
                 })
                 .collect(),
             status: self.status.clone(),
+            project: self
+                .project
+                .as_ref()
+                .map(|open| open.folder.display().to_string()),
             log: self.log_lines.clone(),
             timing: TimingState {
                 plugin_load: meters.plugin_load(),
@@ -5060,9 +5088,19 @@ impl PlayerApp {
             .map_err(|e| format!("{} could not be read: {e}", path.display()))?;
         let loaded = sequencer::smf::read(&bytes)
             .map_err(|reason| format!("{} was not loaded: {reason}", path.display()))?;
+        self.install_notes(
+            loaded,
+            &path.display().to_string(),
+            "a MIDI file cannot carry parameter locks; the ones in force were cleared",
+        );
+        Ok(())
+    }
 
-        // **MIDI cannot carry locks**, so loading one clears them and says so. Keeping them would
-        // put a filter sweep you did not import under notes you did.
+    /// Replaces the pattern and tempo with notes read through the step grid: a `.mid`'s, or a
+    /// project's that another program wrote. `no_locks` says why the locks in force went.
+    fn install_notes(&mut self, loaded: sequencer::smf::Loaded, label: &str, no_locks: &str) {
+        // **Notes cannot carry locks**, so loading them clears the locks and says so. Keeping them
+        // would put a filter sweep you did not import under notes you did.
         let had_locks = !self.sequencer.locks.is_empty()
             || !self.pending_fx_locks.is_empty()
             || self.parked_locks.is_some();
@@ -5079,17 +5117,13 @@ impl PlayerApp {
 
         self.sequence_problems = loaded.lost.clone();
         if had_locks {
-            self.sequence_problems.push(
-                "a MIDI file cannot carry parameter locks; the ones in force were cleared"
-                    .to_owned(),
-            );
+            self.sequence_problems.push(no_locks.to_owned());
         }
         self.status = Some(match self.sequence_problems.len() {
-            0 => format!("Loaded {}", path.display()),
-            n => format!("Loaded {} — {n} thing(s) could not be kept", path.display()),
+            0 => format!("Loaded {label}"),
+            n => format!("Loaded {label} — {n} thing(s) could not be kept"),
         });
         self.persist();
-        Ok(())
     }
 
     /// Everything Load can offer: `.mid` from exports, and legacy `.seq.json` where it has always
@@ -5107,6 +5141,13 @@ impl PlayerApp {
     /// the same test sequence can be run through two synths and compared.
     pub fn load_sequence(&mut self, path: &Path) -> Result<(), String> {
         let (sequence, problems) = sequencer::Sequence::load(path)?;
+        self.install_sequence(sequence, problems);
+        Ok(())
+    }
+
+    /// Replaces the pattern, tempo and locks with a sequence's: a file's, or the one a project
+    /// carries under the player's extension.
+    fn install_sequence(&mut self, sequence: sequencer::Sequence, problems: Vec<String>) {
         let (pattern, tempo, more) = sequence.unpack();
         self.pending_fx_locks.clear();
 
@@ -5170,11 +5211,374 @@ impl PlayerApp {
             n => format!("Loaded {} with {n} problem(s)", sequence.name),
         });
         self.persist();
-        Ok(())
     }
 
     pub fn saved_sequences(&self) -> Vec<(String, PathBuf)> {
         sequencer::sequence::list(&self.sequence_dir)
+    }
+
+    // --- tutti projects ----------------------------------------------------------------------------
+    //
+    // The instrument, its effects and the sequence as one project in the open format newDAWn's songs
+    // are in, so a sound made here opens there and back (the owner, 2026-10-21). The conversion and
+    // its rules are `crate::project`'s; this is where the player's live state goes in and comes out.
+
+    /// The projects Load offers: the folders beside the exports that hold one.
+    pub fn saved_projects(&self) -> Vec<(String, PathBuf)> {
+        crate::project::list(&self.exports_dir)
+    }
+
+    /// [`PlayerApp::saved_projects`] for the window: listed again after a second, or after a
+    /// project is saved or opened.
+    fn listed_projects(&mut self) -> Vec<(String, PathBuf)> {
+        let fresh = self
+            .projects_listed
+            .as_ref()
+            .is_some_and(|(at, _)| at.elapsed() < std::time::Duration::from_secs(1));
+        if !fresh {
+            self.projects_listed = Some((std::time::Instant::now(), self.saved_projects()));
+        }
+        self.projects_listed
+            .as_ref()
+            .map(|(_, projects)| projects.clone())
+            .unwrap_or_default()
+    }
+
+    /// The project the player has open, if any.
+    pub fn open_project_folder(&self) -> Option<&Path> {
+        self.project.as_ref().map(|open| open.folder.as_path())
+    }
+
+    /// Saves the instrument, its effects and the sequence as a tutti project called `name`.
+    ///
+    /// **Over the project the player has open when `name` is its name**, in place: its other
+    /// tracks and whatever another program put in it stay. Any other name is a new project in a
+    /// folder of that name beside the exports, never over a folder that exists.
+    pub fn save_project(&mut self, name: &str) -> Result<PathBuf, String> {
+        let stem = sequencer::sequence::safe_stem(name);
+        let own = |open: &crate::project::OpenProject| {
+            open.folder
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|folder| folder == stem || folder == name)
+        };
+        let (mut open, made) = match self.project.take() {
+            Some(open) if own(&open) => (open, false),
+            other => {
+                self.project = other;
+                std::fs::create_dir_all(&self.exports_dir).map_err(|e| {
+                    format!("{} could not be made: {e}", self.exports_dir.display())
+                })?;
+                let folder = crate::project::free_folder(&self.exports_dir, &stem);
+                let project = tutti_fs::create(&folder, name, &crate::project::generator())
+                    .map_err(|e| format!("{} could not be made: {e}", folder.display()))?;
+                (crate::project::OpenProject::new(folder, project), true)
+            }
+        };
+        match self.write_project(&mut open, name) {
+            Ok(said) => {
+                let folder = open.folder.clone();
+                // The name is the project's now, `Line-2` when `Line` was taken, so the next save
+                // under it goes over this project rather than making another.
+                if let Some(saved_as) = folder.file_name().and_then(|n| n.to_str()) {
+                    self.sequence_name = saved_as.to_owned();
+                }
+                self.project = Some(open);
+                self.projects_listed = None;
+                self.status = Some(match said.first() {
+                    None => format!("Saved {}", folder.display()),
+                    Some(first) => format!("Saved {} — {first}", folder.display()),
+                });
+                self.sequence_problems = said;
+                Ok(folder)
+            }
+            Err(reason) => {
+                if made {
+                    // Made by this save and holding nothing anybody wrote.
+                    let _ = std::fs::remove_dir_all(&open.folder);
+                } else {
+                    self.project = Some(open);
+                }
+                Err(reason)
+            }
+        }
+    }
+
+    /// The live setup into the project, and the project saved. Gives what the user should hear.
+    fn write_project(
+        &mut self,
+        open: &mut crate::project::OpenProject,
+        name: &str,
+    ) -> Result<Vec<String>, String> {
+        use crate::project::Plugin;
+        let mut said = Vec::new();
+        let instrument = match self.engine.plugin_id().map(str::to_owned) {
+            Some(id) => {
+                let state = match self.engine.capture_state() {
+                    Ok(bytes) => Some(bytes),
+                    Err(reason) => {
+                        said.push(format!("the instrument's sound was not saved: {reason}"));
+                        None
+                    }
+                };
+                let (plugin_name, vendor) = self.plugin_names(&id);
+                let device = open
+                    .instrument
+                    .as_ref()
+                    .filter(|(plugin, _)| *plugin == id)
+                    .map(|(_, device)| device.clone());
+                Some(Plugin {
+                    id,
+                    name: plugin_name,
+                    vendor,
+                    state,
+                    enabled: true,
+                    device,
+                })
+            }
+            None => None,
+        };
+        let mut fx_ids = Vec::new();
+        let mut effects = Vec::new();
+        for (index, info) in self.engine.fx_info().into_iter().enumerate() {
+            let state = match self.engine.capture_fx_state(index) {
+                Ok(bytes) => Some(bytes),
+                Err(reason) => {
+                    said.push(format!(
+                        "effect {}'s sound was not saved: {reason}",
+                        index + 1
+                    ));
+                    None
+                }
+            };
+            let (plugin_name, vendor) = self.plugin_names(&info.plugin_id);
+            let device = open
+                .effects
+                .iter()
+                .find(|(fx, _)| *fx == info.id)
+                .map(|(_, device)| device.clone());
+            fx_ids.push(info.id);
+            effects.push(Plugin {
+                id: info.plugin_id,
+                name: plugin_name,
+                vendor,
+                state,
+                enabled: !info.bypassed,
+                device,
+            });
+        }
+        let mut sequence =
+            sequencer::Sequence::new(name, &self.sequencer.pattern, self.sequencer.tempo);
+        let locks = self.capture_locks()?;
+        sequence.locks = (!locks.params.is_empty()).then_some(locks);
+        let setup = crate::project::Setup {
+            title: name.to_owned(),
+            instrument,
+            effects,
+            sequence,
+            pattern: self.sequencer.pattern.clone(),
+            tempo: self.sequencer.tempo,
+        };
+        let devices = crate::project::write(open, &setup)?;
+        let saved = open
+            .project
+            .save(&crate::project::generator())
+            .map_err(|e| format!("{} was not saved: {e}", open.folder.display()))?;
+        said.extend(saved.warnings.iter().map(|warning| warning.message.clone()));
+        // Which device each plugin now is, so the next save goes over the same ones.
+        let mut devices = devices.into_iter();
+        open.instrument = setup
+            .instrument
+            .as_ref()
+            .and_then(|plugin| Some((plugin.id.clone(), devices.next()?)));
+        open.effects = fx_ids.into_iter().zip(devices).collect();
+        Ok(said)
+    }
+
+    /// A plugin's name and vendor as the scan found them, or its id when it was not found.
+    fn plugin_names(&self, id: &str) -> (String, String) {
+        self.found.iter().find(|found| found.id == id).map_or_else(
+            || (id.to_owned(), String::new()),
+            |found| (found.name.clone(), found.vendor.clone()),
+        )
+    }
+
+    /// Opens a tutti project: the first track with an instrument, the instrument and its effects
+    /// with their sound, and its music into the sequencer.
+    ///
+    /// **What the player can't honour is said, not skipped silently**: a plugin not installed
+    /// here, a device it doesn't host, notes off the step grid. Each also keeps a save from going
+    /// over the project, which would lose it ([`crate::project::Place::refused`]); a save under
+    /// another name is a new project.
+    pub fn open_project(&mut self, folder: &Path) -> Result<(), String> {
+        use crate::project::Music;
+        let opened = tutti_fs::open(folder)
+            .map_err(|e| format!("{} could not be opened: {e}", folder.display()))?;
+        if let Some(error) = opened.report.errors().next() {
+            return Err(format!(
+                "{} is not a valid project: {error}",
+                folder.display()
+            ));
+        }
+        let read = crate::project::read(&opened.project)
+            .map_err(|reason| format!("{}: {reason}", folder.display()))?;
+        // From here the setup is replaced, so nothing is open until this one is: an open that fails
+        // part way must not leave a save going over the project that was open before.
+        self.project = None;
+        self.projects_listed = None;
+        let mut problems = read.problems.clone();
+        let mut place = read.place.clone();
+        if opened.read_only {
+            problems.push(
+                "it was written by a later version of the format; it plays, and saves under \
+                 another name"
+                    .to_owned(),
+            );
+            place
+                .refused
+                .get_or_insert_with(|| "a later version of the format wrote it".to_owned());
+        }
+
+        // The instrument, with its sound.
+        let mut instrument = None;
+        if let Some(device) = &read.instrument {
+            let found = device
+                .plugin
+                .as_deref()
+                .and_then(|id| self.found.iter().find(|f| f.is_supported() && f.id == id))
+                .cloned();
+            match found {
+                Some(found) => {
+                    self.load(found.bundle.clone(), found.id.clone());
+                    if self.engine.plugin_id() == Some(found.id.as_str()) {
+                        if let Some(state) = &device.state
+                            && let Err(reason) =
+                                self.engine.load_state_bytes(state, &mut self.params)
+                        {
+                            problems
+                                .push(format!("{}'s sound was not loaded: {reason}", device.name));
+                            place
+                                .refused
+                                .get_or_insert_with(|| format!("{}'s sound", device.name));
+                        }
+                        instrument = Some((found.id, device.id.clone()));
+                    } else {
+                        problems.push(format!("{} could not be loaded", device.name));
+                        place
+                            .refused
+                            .get_or_insert_with(|| format!("{} isn't loaded", device.name));
+                    }
+                }
+                None => {
+                    problems.push(format!(
+                        "{} ({}) isn't installed here",
+                        device.name, device.named
+                    ));
+                    place
+                        .refused
+                        .get_or_insert_with(|| format!("{} isn't loaded", device.name));
+                }
+            }
+        }
+
+        // The effects, in place of the chain.
+        while self.engine.fx_len() > 0 {
+            self.remove_fx(self.engine.fx_len() - 1)?;
+        }
+        let mut effects = Vec::new();
+        for device in &read.effects {
+            let found = device
+                .plugin
+                .as_deref()
+                .and_then(|id| self.found.iter().find(|f| f.is_effect() && f.id == id))
+                .cloned();
+            let Some(found) = found else {
+                problems.push(format!(
+                    "{} ({}) isn't installed here",
+                    device.name, device.named
+                ));
+                place
+                    .refused
+                    .get_or_insert_with(|| format!("{} isn't loaded", device.name));
+                continue;
+            };
+            match self.add_fx(found.bundle.clone(), found.id.clone()) {
+                Ok(index) => {
+                    if let Some(state) = &device.state
+                        && let Err(reason) = self.engine.load_fx_state(index, state)
+                    {
+                        problems.push(format!("{}'s sound was not loaded: {reason}", device.name));
+                        place
+                            .refused
+                            .get_or_insert_with(|| format!("{}'s sound", device.name));
+                    }
+                    if !device.enabled {
+                        let _ = self.set_fx_bypassed(index, true);
+                    }
+                    if let Some(info) = self.engine.fx_info().get(index) {
+                        effects.push((info.id, device.id.clone()));
+                    }
+                }
+                Err(reason) => {
+                    problems.push(format!("{} could not be added: {reason}", device.name));
+                    place
+                        .refused
+                        .get_or_insert_with(|| format!("{} isn't loaded", device.name));
+                }
+            }
+        }
+
+        // The music, then the tempo the project plays at.
+        let name = folder
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("project")
+            .to_owned();
+        match read.music {
+            Ok(Music::Sequence(sequence)) => self.install_sequence(sequence, Vec::new()),
+            Ok(Music::Notes(loaded)) => self.install_notes(
+                loaded,
+                &name,
+                "notes another program wrote carry no parameter locks; the ones in force were \
+                 cleared",
+            ),
+            Ok(Music::Nothing) => self.install_sequence(
+                sequencer::Sequence::new(name.as_str(), &sequencer::Pattern::empty(), read.tempo),
+                Vec::new(),
+            ),
+            // The sequence in force stays: nothing the player could read replaces it.
+            Err(reason) => problems.push(reason),
+        }
+        self.sequencer.tempo = read.tempo;
+        self.sequencer_changed();
+        self.persist();
+
+        problems.append(&mut self.sequence_problems);
+        self.sequence_problems = problems;
+        self.sequence_name = name.clone();
+        self.status = Some(match self.sequence_problems.len() {
+            0 => format!("Opened {name}"),
+            n => format!("Opened {name} — {n} thing(s) the player couldn't honour"),
+        });
+        self.project = Some(crate::project::OpenProject {
+            folder: folder.to_path_buf(),
+            project: opened.project,
+            place,
+            instrument,
+            effects,
+        });
+        Ok(())
+    }
+
+    /// A project by name beside the exports, or a folder by its path.
+    fn project_folder(&self, wanted: &str) -> PathBuf {
+        let path = PathBuf::from(wanted);
+        if path.is_dir() {
+            path
+        } else {
+            self.exports_dir
+                .join(sequencer::sequence::safe_stem(wanted))
+        }
     }
 
     /// Ends gestures whose controls have gone quiet.
@@ -6218,7 +6622,8 @@ impl PlayerApp {
         if !self.control_map.knows_instrument(clap_id) {
             ui.label("No control map found for this instrument.");
             ui.small(
-                "A control map ships beside the .clap bundle. Without one the fixed knobs and                  the paged bank have nothing to reach on this plugin.",
+                "A control map ships beside the .clap bundle. Without one the fixed knobs and \
+                 the paged bank have nothing to reach on this plugin.",
             );
             for problem in &self.control_map_problems {
                 ui.colored_label(adapter::tokens_for(ui).danger, problem);
@@ -7331,13 +7736,41 @@ impl PlayerApp {
                 }
                 ui.close();
             }
+            // The whole setup, in the format newDAWn opens: instrument, effects and sequence.
+            if ui
+                .button("Project (.tutti)")
+                .on_hover_text(
+                    "The instrument, its effects with their sound, and the sequence, as a tutti \
+                     project newDAWn opens. The name of the project you opened saves over it.",
+                )
+                .clicked()
+            {
+                let name = self.sequence_name.clone();
+                if let Err(reason) = self.save_project(&name) {
+                    self.status = Some(reason);
+                }
+                ui.close();
+            }
         });
 
         let saved = self.loadable_sequences();
-        ui.menu_button(format!("Load ({})", saved.len()), |ui| {
-            if saved.is_empty() {
+        let projects = self.listed_projects();
+        ui.menu_button(format!("Load ({})", saved.len() + projects.len()), |ui| {
+            if saved.is_empty() && projects.is_empty() {
                 ui.weak("Nothing to load yet.");
                 return;
+            }
+            for (name, folder) in projects {
+                if ui
+                    .button(format!("{name} (project)"))
+                    .on_hover_text("Opens its instrument, effects and sequence.")
+                    .clicked()
+                {
+                    if let Err(reason) = self.open_project(&folder) {
+                        self.status = Some(reason);
+                    }
+                    ui.close();
+                }
             }
             for (name, path) in saved {
                 if ui.button(&name).clicked() {

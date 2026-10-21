@@ -146,6 +146,11 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
   (`RenderConfig::tempo`, `events::transport`, as live playback; both report a block at its first
   sample, CLAP's definition, held by the transport-probe fixture); a plugin without `state` is refused; `normalise <on|off>`;
   a render is exactly the sequence. [NOTES.md § Export](NOTES.md#exporting-audio-renders-a-snapshot-and-says-what-it-cannot-promise) · [§ The file](NOTES.md#the-exported-file-is-exactly-the-sequence)
+- **A tutti project is the whole setup** (`src/project.rs`; the owner, 2026-10-21): instrument and
+  effects with their states, the sequence as notes, the exact sequence under `dk.mxm.player`. Save's
+  *Project* and `saveproject` write it beside the exports, Load and `openproject` open it, `dump`
+  names it; a save goes over it only when the player read it whole (`Place::refused`).
+  [NOTES.md § Projects](NOTES.md#a-tutti-project-is-the-whole-setup)
 - **`.mid` is interchange, `.seq.json` fixtures**: refuse with a reason, name what is lost; a save name cannot leave the exports folder
   (`sequence::safe_stem`); run
   `tests/midi-conformance/verify.py` when the writer changes. Files are written by `mxm-audio-file`; the
@@ -184,6 +189,7 @@ count**, since a filter matching nothing passes. [NOTES.md § Per change](NOTES.
 | `src/sequencer/random.rs` | `cargo test -p mxm-player --lib sequencer::random`. Add `--test t6_sequencer random` when `randomise` or its button changed |
 | `src/sequencer/` `pattern`, `clock`, `runtime`, `locks` | `--lib sequencer::<module>`, then `--test t6_sequencer` filtered by feature: `tie`, `slide`, `lock`, `loop`, `tempo`. Its rendered-audio tests are the sequencer's own timing and articulation proofs, not synth tests |
 | `src/sequencer/` `sequence`, `smf`, `export`, `wav` | `--lib sequencer::<module>`, then `--test t6_sequencer` filtered by `sequence`, `midi` or `export` |
+| `src/project.rs`, or the project save and open in `src/ui/` | `--lib project`, then `--test t14_projects` (it needs mxm-mono-01's bundle and the fixtures) and `--test t10_cli_conformance` when a verb changed |
 | The sequencer panel in `src/ui/` | `--test t6_sequencer`, filtered by the feature |
 | `src/cli.rs` | `--test t9_cli` and `--test t10_cli_conformance` |
 | `src/control_map/` or the collection standard/product maps | `--lib control_map` and `--test t5_control_map`. Its inventory sweep of every `bundler.toml` product map left at the split: each product's `cargo xtask bundle` now checks its map (mxm-kit's `control_maps::check`) |

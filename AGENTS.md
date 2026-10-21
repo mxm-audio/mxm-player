@@ -109,7 +109,10 @@ sequencing and hosting work belongs in newDAWn. This repository stays as the hos
 VST3 hosting** (the owner, 2026-10-09: "We need VST3 support ourselves in the player and daw.
 Perhaps start by adding it in the player?"), which lives in the kit so newDAWn shares it, and the
 plugin menus that VST3's hundreds of plugins outgrew: columns, search and refusals in a submenu (the
-owner, 2026-10-09).
+owner, 2026-10-09). **A second exception, tutti projects** (the owner, 2026-10-21: "Can you implement
+it for the player as well?"; "audio plugins, effects plugins, musical data"): the instrument, its
+effects and the sequence save and open as a project in the open format newDAWn's songs are in, so
+a sound made here opens there and back (`apps/mxm-player/src/project.rs`).
 
 It is one of the MXM products, each in its own repository under
 [github.com/mxm-audio](https://github.com/mxm-audio), built on the MIT-licensed

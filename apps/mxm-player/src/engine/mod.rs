@@ -1580,6 +1580,11 @@ impl Engine {
     /// plugins.
     pub fn load_state(&mut self, path: &Path, params: &mut ParamSet) -> Result<(), String> {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        self.load_state_bytes(&bytes, params)
+    }
+
+    /// [`Engine::load_state`] from bytes already read: a project's state file.
+    pub fn load_state_bytes(&mut self, bytes: &[u8], params: &mut ParamSet) -> Result<(), String> {
         let loaded = self
             .loaded
             .as_mut()
@@ -1592,7 +1597,8 @@ impl Engine {
 
         {
             let mut handle = loaded.instance.plugin_handle();
-            ext.load(&mut handle, &mut bytes.as_slice())
+            let mut input = bytes;
+            ext.load(&mut handle, &mut input)
                 .map_err(|e| e.to_string())?;
         }
 

@@ -308,31 +308,39 @@ pub fn write(pattern: &Pattern, tempo: f64) -> Vec<u8> {
         track.extend_from_slice(&[0xff, 0x58, 0x04, numerator, log2, 24, 8]);
     }
 
-    // Notes, in tick order.
-    //
-    // **A tied run is one note, not several.** A note followed by *k* empty ties lasts *k* + 1
-    // steps, which MIDI expresses natively as a single note whose off lands on a step boundary. An
-    // untied note keeps the half-step gate the sequencer plays.
-    let gate = TICKS_PER_STEP / 2;
     let mut events: Vec<(u32, u8, u8)> = Vec::new(); // (tick, status, key)
+    for (start, end, key) in note_spans(pattern) {
+        events.push((start, 0x90 | CHANNEL, key));
+        events.push((end, 0x80 | CHANNEL, key));
+    }
+    finish(track, events, pattern.len())
+}
+
+/// The notes a pattern plays, as `(start, end, key)` in this module's ticks, in step order.
+///
+/// **A tied run is one note, not several.** A note followed by *k* empty ties lasts *k* + 1 steps,
+/// which a timeline expresses natively as a single note whose end lands on a step boundary. An
+/// untied note keeps the half-step gate the sequencer plays. What a `.mid` and a tutti project
+/// both hold, so the two can never disagree about the music.
+pub fn note_spans(pattern: &Pattern) -> Vec<(u32, u32, u8)> {
+    let gate = TICKS_PER_STEP / 2;
+    let mut spans = Vec::new();
     for (index, step) in pattern.steps() {
         if step.is_empty() {
             continue;
         }
         let start = index as u32 * TICKS_PER_STEP;
         let end = if pattern.held_past_gate(index) {
-            // `run_ends_at` stops at the bar, which is the truncation `report` names: a run that
-            // wraps is a property of a repeating pattern, and this file holds exactly one bar.
+            // `run_ends_at` stops at the sequence's end, which is the truncation `write_report`
+            // names: a run that wraps is a property of a repeating pattern, and a file holds it
+            // once.
             pattern.run_ends_at(index) as u32 * TICKS_PER_STEP
         } else {
             start + gate
         };
-        step.for_each(|key| {
-            events.push((start, 0x90 | CHANNEL, key));
-            events.push((end, 0x80 | CHANNEL, key));
-        });
+        step.for_each(|key| spans.push((start, end, key)));
     }
-    finish(track, events, pattern.len())
+    spans
 }
 
 /// Appends the note events to a prepared track and wraps the whole thing in a format 0 file.
@@ -433,13 +441,13 @@ impl<'a> Reader<'a> {
     }
 }
 
-/// One note event, as read.
-struct NoteEvent {
-    tick: u32,
-    channel: u8,
-    key: u8,
-    velocity: u8,
-    on: bool,
+/// One note event, as read: a note-on or a note-off at a tick of the reader's division.
+pub(crate) struct NoteEvent {
+    pub(crate) tick: u32,
+    pub(crate) channel: u8,
+    pub(crate) key: u8,
+    pub(crate) velocity: u8,
+    pub(crate) on: bool,
 }
 
 /// Reads a file into a pattern and a tempo.
@@ -577,6 +585,24 @@ pub fn read(bytes: &[u8]) -> Result<Loaded, Refused> {
     if tempos.len() > 1 {
         return Err(Refused::TempoChange);
     }
+    let tempo = match tempos.first() {
+        Some(micros) => 60_000_000.0 / f64::from(*micros),
+        None => super::clock::DEFAULT_TEMPO,
+    };
+    from_notes(notes, ticks_per_quarter, time_signature, tempo, ignored)
+}
+
+/// The step grid's rules over timed notes: what a MIDI file's notes and a tutti project's notes
+/// both pass through, so the two refuse and report alike. `notes` are in order of time, at
+/// `ticks_per_quarter`; `ignored` names what the source carried and this cannot.
+pub(crate) fn from_notes(
+    notes: Vec<NoteEvent>,
+    ticks_per_quarter: u32,
+    time_signature: Option<(u8, u8)>,
+    tempo: f64,
+    mut ignored: Vec<&'static str>,
+) -> Result<Loaded, Refused> {
+    let ticks_per_quarter = ticks_per_quarter.max(1);
     // **The meter says how long a bar is**, rather than having to be 4/4. What it cannot say is a
     // bar that is not a whole number of sixteenths, which is a refusal — importing 3/32 as something
     // near it would be inventing music.
@@ -599,16 +625,16 @@ pub fn read(bytes: &[u8]) -> Result<Loaded, Refused> {
         None => STEPS,
     };
 
-    let tempo = match tempos.first() {
-        Some(micros) => 60_000_000.0 / f64::from(*micros),
-        None => super::clock::DEFAULT_TEMPO,
-    };
     if !(MIN_TEMPO..=MAX_TEMPO).contains(&tempo) {
         return Err(Refused::TempoOutOfRange(tempo));
     }
 
     // Everything below is in *our* ticks, so a foreign division is rescaled before the grid check.
-    let scale = |tick: u32| tick * TICKS_PER_QUARTER as u32 / ticks_per_quarter;
+    // In 64 bits: a tick at a fine division times ours overflows 32.
+    let scale = |tick: u32| {
+        (u64::from(tick) * u64::from(TICKS_PER_QUARTER) / u64::from(ticks_per_quarter))
+            .min(u64::from(u32::MAX)) as u32
+    };
 
     let mut channels: Vec<u8> = notes.iter().map(|n| n.channel).collect();
     channels.sort_unstable();
@@ -619,8 +645,24 @@ pub fn read(bytes: &[u8]) -> Result<Loaded, Refused> {
 
     // **The pattern is sized from the file**, so a long one imports whole. The furthest event is
     // the end; a file that stops mid-bar rounds up, because a sequence is whole bars.
-    let last_tick = notes.iter().map(|note| note.tick).max().unwrap_or(0);
-    let total_steps = (last_tick / TICKS_PER_STEP + 1).max(1) as usize;
+    //
+    // **In our ticks, and by the step each event belongs to**: a note-on is in the step it starts,
+    // a note-off on a boundary ends the step before it. Unscaled ticks gave a file at another
+    // division ten times the bars, and an off counted as starting a step gave a run tied to the
+    // very end an empty bar after it.
+    let total_steps = notes
+        .iter()
+        .map(|note| {
+            let tick = scale(note.tick);
+            if note.on {
+                tick / TICKS_PER_STEP + 1
+            } else {
+                tick.div_ceil(TICKS_PER_STEP)
+            }
+        })
+        .max()
+        .unwrap_or(1)
+        .max(1) as usize;
     let bars = total_steps.div_ceil(steps_per_bar).max(1);
     let mut pattern = Pattern::sized(bars, steps_per_bar);
     let bar = TICKS_PER_STEP * pattern.len() as u32;
@@ -728,8 +770,11 @@ pub fn read(bytes: &[u8]) -> Result<Loaded, Refused> {
     // This catches more than unequal chords. A note running steps 1 to 3 while a half-step note
     // starts on step 2 needs step 2 tied for the first and untied for the second, and no rule about
     // notes *starting together* would see it.
-    let mut required: Vec<Option<bool>> = vec![None; STEPS];
-    let mut blamed: Vec<Vec<u8>> = vec![Vec::new(); STEPS];
+    // **The whole sequence, not its first sixteen steps**: a run tied past step sixteen of a
+    // longer sequence read back untied while these were sized `STEPS`.
+    let length = pattern.len();
+    let mut required: Vec<Option<bool>> = vec![None; length];
+    let mut blamed: Vec<Vec<u8>> = vec![Vec::new(); length];
     for run in &runs {
         // Its own step starts the note, so it is never a continuation.
         let mut wants: Vec<(usize, bool)> = vec![(run.step, false)];
@@ -747,7 +792,7 @@ pub fn read(bytes: &[u8]) -> Result<Loaded, Refused> {
         }
 
         for (step, tied) in wants {
-            if step >= STEPS {
+            if step >= length {
                 continue;
             }
             blamed[step].push(run.key);
@@ -819,6 +864,16 @@ mod tests {
         pattern.toggle(4, 63);
         pattern.toggle(15, 48);
         pattern
+    }
+
+    #[test]
+    fn a_run_tied_to_the_very_end_reads_back_one_bar_long() {
+        // Its note-off sits on the bar's end, which once counted as a step after it: two bars.
+        let mut pattern = Pattern::empty();
+        pattern.toggle(14, 60);
+        pattern.set_tied(15, true);
+        let loaded = read(&write(&pattern, canonical_tempo(120.0))).expect("our own file");
+        assert_eq!(loaded.pattern, pattern);
     }
 
     #[test]

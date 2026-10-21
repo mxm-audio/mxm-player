@@ -864,6 +864,14 @@ fn the_vocabulary_and_the_coverage_table_agree() {
         ("export", "t9::the_cli_exports_a_sound"),
         ("save", "t9 sequence tests"),
         ("savemid", "t9::savemid_writes_a_midi_file_that_reads_back"),
+        (
+            "saveproject",
+            "t14::a_setup_saved_as_a_project_opens_in_another_player_as_it_was",
+        ),
+        (
+            "openproject",
+            "t14::a_setup_saved_as_a_project_opens_in_another_player_as_it_was",
+        ),
         ("dumpstate", "asserted below"),
         ("loadstate", "asserted below"),
         (
