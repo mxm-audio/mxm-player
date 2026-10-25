@@ -268,8 +268,7 @@ impl Sentinel {
 
 /// Where CLAP bundles live.
 ///
-/// Windows is the v1 target; the other platforms' locations are listed here rather than
-/// elsewhere so a port is small.
+/// Every platform's locations, in one place.
 pub fn search_paths() -> Vec<PathBuf> {
     let mut paths = Vec::new();
 

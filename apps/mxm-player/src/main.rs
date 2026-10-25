@@ -1,5 +1,8 @@
 //! MXM Player - a CLAP host for testing and playing the MXM Synth Collection.
 
+// A windowed program on Windows, so starting it opens no console. Debug builds keep theirs.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use mxm_player::ui::{MIN_SIZE, PlayerApp, REFERENCE_SIZE};
 
 /// The graphics backends the player will accept, and the reason it is a restricted set.
@@ -14,9 +17,34 @@ const BACKENDS: eframe::wgpu::Backends = eframe::wgpu::Backends::DX12
     .union(eframe::wgpu::Backends::VULKAN)
     .union(eframe::wgpu::Backends::METAL);
 
+/// Started from a terminal, a windowed program has nowhere to print: its messages go to that
+/// terminal, unless they already go somewhere, such as a pipe.
+#[cfg(target_os = "windows")]
+fn attach_console() {
+    unsafe extern "system" {
+        fn GetStdHandle(which: u32) -> *mut std::ffi::c_void;
+        fn AttachConsole(process: u32) -> i32;
+    }
+    /// `STD_ERROR_HANDLE`, `(DWORD)-12`.
+    const STD_ERROR_HANDLE: u32 = -12i32 as u32;
+    /// `ATTACH_PARENT_PROCESS`, `(DWORD)-1`.
+    const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+    // SAFETY: both only read or set this process's standard handles.
+    unsafe {
+        if GetStdHandle(STD_ERROR_HANDLE).is_null() {
+            AttachConsole(ATTACH_PARENT_PROCESS);
+        }
+    }
+}
+
+/// Elsewhere a program started from a terminal keeps it, windowed or not.
+#[cfg(not(target_os = "windows"))]
+fn attach_console() {}
+
 fn main() -> eframe::Result<()> {
     // A copy of this program started to read a VST3 module's plugins does that and exits.
     mxm_vst3_host::serve_probe();
+    attach_console();
     let mut wgpu_options = eframe::egui_wgpu::WgpuConfiguration::default();
     if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut wgpu_options.wgpu_setup {
         setup.instance_descriptor.backends = BACKENDS;
