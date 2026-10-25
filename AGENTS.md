@@ -132,7 +132,9 @@ technique or paper it comes from.
 # Ownership
 
 Root owns `Cargo.toml`, `Cargo.lock`, `LICENSE`, `NOTICE.md`, `TRADEMARKS.md`, `README.md`,
-`CONTRIBUTING.md`, `.cargo/`, `.github/` and `xtask/`.
+`CONTRIBUTING.md`, `.cargo/`, `.github/`, `xtask/` and `packaging/`: `package.py` builds the
+player's release archive for the platform it runs on, which the MXM portal installs, into `dist/`
+(git-ignored); its signing settings are in its docstring.
 Each folder with an `AGENTS.md` owns its contents; the index is below.
 
 **Dependencies follow each repository's `main`, and `Cargo.lock` pins the exact commit.** The kit comes from mxm-kit's
