@@ -114,6 +114,11 @@ it for the player as well?"; "audio plugins, effects plugins, musical data"): th
 effects and the sequence save and open as a project in the open format newDAWn's songs are in, so
 a sound made here opens there and back (`apps/mxm-player/src/project.rs`).
 
+**In version 1.0 of the MXM collection** (the owner, 2026-10-25: tutti "belongs in v. 101 along
+with player and tools", "i mean version 1.0 itself"): a standalone host in its own right, so it
+passes the release's checks on all three platforms. Fixing what they find is in scope; new
+features still aren't.
+
 It is one of the MXM products, each in its own repository under
 [github.com/mxm-audio](https://github.com/mxm-audio), built on the MIT-licensed
 [mxm-kit](https://github.com/mxm-audio/mxm-kit) — the design system, keyboard navigation, presets,
