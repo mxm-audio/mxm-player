@@ -303,8 +303,9 @@ pub fn write(open: &mut OpenProject, setup: &Setup) -> Result<Vec<Id>, String> {
     Ok(ids)
 }
 
-/// The tempo and the meter, one point each, and the loop: the pattern in a new project, following
-/// the pattern where it was the pattern, and another program's own left as it is.
+/// The tempo and the meter, one point each, and the range (tutti 3.6), looped: the pattern in a
+/// new project, following the pattern where it was the pattern, and another program's own left
+/// as it is.
 fn write_time(doc: &mut Document, setup: &Setup, length: i64, old_length: Option<i64>) {
     doc.ppq = PPQ;
     match doc.tempo.as_mut_slice() {
@@ -326,14 +327,11 @@ fn write_time(doc: &mut Document, setup: &Setup, length: i64, old_length: Option
             )]
         }
     }
-    match &mut doc.r#loop {
+    match &mut doc.range {
         None => {
-            doc.r#loop = Some(tutti::Loop {
-                start: 0,
-                end: length,
-                enabled: true,
-                unknown: Default::default(),
-            })
+            let mut range = tutti::Range::new(0, length);
+            range.r#loop = true;
+            doc.range = Some(range);
         }
         Some(range) if range.start == 0 && Some(range.end) == old_length => range.end = length,
         Some(_) => {}
@@ -938,16 +936,11 @@ mod tests {
     }
 
     #[test]
-    fn a_save_over_keeps_each_notes_own_data_and_another_programs_loop() {
+    fn a_save_over_keeps_each_notes_own_data_and_another_programs_range() {
         let folder = saved("kept", &setup(a_line()));
         let mut project = tutti_fs::open(&folder).unwrap().project;
         let doc = project.document_mut();
-        doc.r#loop = Some(tutti::Loop {
-            start: 960,
-            end: 1920,
-            enabled: false,
-            unknown: Default::default(),
-        });
+        doc.range = Some(tutti::Range::new(960, 1920));
         let pattern = &mut doc.tracks[0].patterns[0];
         pattern.extensions.clear();
         if let tutti::Event::Note(note) = &mut pattern.events[0] {
@@ -979,7 +972,7 @@ mod tests {
             doc.tracks[0].patterns[0].events.contains(&kept),
             "the note as it was"
         );
-        assert_eq!(doc.r#loop.unwrap().start, 960, "their loop");
+        assert_eq!(doc.range.unwrap().start, 960, "their range");
     }
 
     #[test]

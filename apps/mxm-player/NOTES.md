@@ -1747,7 +1747,7 @@ open project format, so a sound made in the player opens in the DAW and back. Wh
 - **Read whole means written back the same.** A note that stays where it was keeps its own velocity,
   release and another program's data on it, so velocities the sequencer plays at one level survive a
   save; notes the grid would move, shorten or merge stop a save over the project; another program's
-  loop is left as it was; and a pattern longer than `project::MAX_BARS` is refused before anything
+  range is left as it was; and a pattern longer than `project::MAX_BARS` is refused before anything
   is sized from it (the code review of 2026-10-21). A new project's folder name becomes the name
   field, so `Line-2` saves over `Line-2`.
 - **What the format's crate does, the player doesn't.** The folder, the index, the README, the
@@ -1759,6 +1759,12 @@ Found on the way, in the MIDI reader the projects now share: an imported pattern
 ticks before they were scaled to the player's division, so a file at another division got ten times
 the bars, and a run tied to the very end gained an empty bar after it; and the tie gates were sized
 to the first sixteen steps, so a run tied past step sixteen read back untied. Each has its test.
+
+**2026-10-25: the document's `loop` is its `range`** (tutti's 3.6; the owner: "Perhaps we should
+change what is now called loop to call it the "range". Since it has multiple functions besides
+setting hte loop"): the span the user marks, which playback loops over when its `loop` is on and
+which exports and renders cover. The player writes a range over the song it makes, `loop` on, and
+leaves another program's as it was (`project::write_time`).
 
 ### MIDI is the interchange format; JSON is the fixture format
 
