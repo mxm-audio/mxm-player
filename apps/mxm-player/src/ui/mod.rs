@@ -2046,10 +2046,7 @@ impl PlayerApp {
         let height = if collapsed {
             self.collapsed_height()
         } else {
-            self.settings
-                .window_size
-                .map(|(_, h)| h)
-                .unwrap_or(REFERENCE_SIZE[1])
+            expanded_height(self.settings.window_size.map(|(_, h)| h))
         };
 
         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
@@ -2075,7 +2072,16 @@ impl PlayerApp {
         let Some(size) = size else {
             return;
         };
-        if !geometry_worth_remembering(self.settings.parameters_collapsed, maximized, fullscreen) {
+        let panels = (
+            self.settings.parameters_collapsed,
+            self.settings.settings_collapsed,
+        );
+        if !geometry_worth_remembering(
+            panels.0,
+            self.collapse_applied == Some(panels),
+            maximized,
+            fullscreen,
+        ) {
             return;
         }
         let current = (size.x, size.y);
@@ -2101,12 +2107,26 @@ impl PlayerApp {
 /// brought it back on the next start as a 1922-point-wide window with its borders on — the owner's
 /// report, 2026-09-04 — because the state is not restored, only the number. `None` from the
 /// backend counts as not maximised; a backend that cannot say is the normal case in the harness.
+///
+/// **Never before the window is `sized` for the panels as they now are.** A panel opened before
+/// `ui` runs (the CLI's `panel parameters open`, answered in `logic`) left the window at its
+/// collapsed height for that frame, which was then remembered as the expanded size: every later
+/// open asked for the collapsed height again, and the panel never showed until the window was
+/// dragged (the owner's report, 2026-11-10).
 pub(crate) fn geometry_worth_remembering(
     collapsed: bool,
+    sized: bool,
     maximized: Option<bool>,
     fullscreen: Option<bool>,
 ) -> bool {
-    !collapsed && maximized != Some(true) && fullscreen != Some(true)
+    !collapsed && sized && maximized != Some(true) && fullscreen != Some(true)
+}
+
+/// The height the window opens the parameter panel at: the one the user chose, never below the
+/// expanded window's minimum. A remembered height below it cannot have been chosen with the panel
+/// open, which forbids it, so it is a collapsed height kept by mistake; opening at it shows no panel.
+pub(crate) fn expanded_height(remembered: Option<f32>) -> f32 {
+    remembered.unwrap_or(REFERENCE_SIZE[1]).max(MIN_SIZE.1)
 }
 
 impl PlayerApp {
@@ -8146,26 +8166,49 @@ fn open_folder(path: &Path) {
 
 #[cfg(test)]
 mod geometry_tests {
-    use super::geometry_worth_remembering;
+    use super::{MIN_SIZE, REFERENCE_SIZE, expanded_height, geometry_worth_remembering};
 
     /// A maximised or fullscreen window is a state, not a size: remembering its width brought the
     /// player back screen-wide with its borders on (the owner's report, 2026-09-04).
     #[test]
     fn a_maximised_or_fullscreen_or_collapsed_window_is_not_remembered() {
         assert!(
-            geometry_worth_remembering(false, None, None),
+            geometry_worth_remembering(false, true, None, None),
             "the ordinary case"
         );
-        assert!(geometry_worth_remembering(false, Some(false), Some(false)));
+        assert!(geometry_worth_remembering(
+            false,
+            true,
+            Some(false),
+            Some(false)
+        ));
         assert!(
-            !geometry_worth_remembering(false, Some(true), None),
+            !geometry_worth_remembering(false, true, Some(true), None),
             "maximised"
         );
         assert!(
-            !geometry_worth_remembering(false, None, Some(true)),
+            !geometry_worth_remembering(false, true, None, Some(true)),
             "fullscreen"
         );
-        assert!(!geometry_worth_remembering(true, None, None), "collapsed");
+        assert!(
+            !geometry_worth_remembering(true, true, None, None),
+            "collapsed"
+        );
+    }
+
+    /// A panel opened before the window was sized for it: the collapsed height is not the
+    /// expanded size (the owner's report, 2026-11-10).
+    #[test]
+    fn a_window_not_yet_sized_for_its_panels_is_not_remembered() {
+        assert!(!geometry_worth_remembering(false, false, None, None));
+    }
+
+    /// A collapsed height remembered by mistake still opens the panel with room for it.
+    #[test]
+    fn the_panel_opens_at_least_at_the_expanded_minimum() {
+        assert_eq!(expanded_height(Some(321.0)), MIN_SIZE.1);
+        assert_eq!(expanded_height(Some(1302.0)), 1302.0);
+        assert_eq!(expanded_height(None), REFERENCE_SIZE[1]);
     }
 }
 

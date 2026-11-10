@@ -110,7 +110,8 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
 - **A tie joins step buttons**; `step_description` names tie and slide. AccessKit labels are interface:
   renaming one is a test-visible change. [NOTES.md § Step buttons](NOTES.md#a-tie-joins-the-buttons-the-bar-says-the-step-holds-notes) · [§ AccessKit](NOTES.md#accesskit-labels-are-interface)
 - **Collapsing**: only the parameter and settings panels; the layout changes only when the user changes it;
-  remember the expanded, non-maximised size only. [NOTES.md § Collapsing](NOTES.md#collapsing-and-the-one-rule-about-movement)
+  remember the expanded, non-maximised size only, once the window is sized for the panels; open the
+  parameter panel no lower than the expanded minimum (`expanded_height`). [NOTES.md § Collapsing](NOTES.md#collapsing-and-the-one-rule-about-movement)
 
 ## The sequencer
 
