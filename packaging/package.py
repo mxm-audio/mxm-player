@@ -103,7 +103,10 @@ def sign_windows(files: list) -> None:
     dlib = os.environ.get("ARTIFACT_SIGNING_DLIB")
     metadata = os.environ.get("ARTIFACT_SIGNING_METADATA")
     if not (dlib and metadata):
-        print("Not signing: ARTIFACT_SIGNING_DLIB and ARTIFACT_SIGNING_METADATA aren't both set.")
+        # Cross-compiled on another system it isn't signed, and nothing is said of it (the owner,
+        # 2026-11-17: "On linux signing it should just say nothing").
+        if platform.system() == "Windows":
+            print("Not signing: ARTIFACT_SIGNING_DLIB and ARTIFACT_SIGNING_METADATA aren't both set.")
         return
     kits = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Windows Kits"
     # The newest Windows SDK first.
