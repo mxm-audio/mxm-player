@@ -116,8 +116,9 @@ def sign_windows(files: list) -> None:
     ])
 
 
-def windows(out: Path, skip_build: bool) -> None:
-    built = build(skip_build)
+def windows(out: Path, skip_build: bool, target: str | None = None) -> None:
+    """Windows' archive; `target` cross-compiles it from another system (`--windows`)."""
+    built = build(skip_build, target)
     name = stem("windows-x64")
     staging = fresh(out / name)
     executables = [shutil.copy2(built / f"{program}.exe", staging) for program in PROGRAMS]
@@ -250,11 +251,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, default=ROOT / "dist", help="where the archive goes")
     parser.add_argument("--skip-build", action="store_true", help="package what's already built")
+    parser.add_argument("--windows", action="store_true",
+                        help="Windows' archive from another system, cross-compiled: the environment "
+                             "for x86_64-pc-windows-msvc must be set (`ws.py release --windows` sets it)")
     args = parser.parse_args()
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
     system = platform.system()
-    if system == "Windows":
+    if args.windows and system != "Windows":
+        windows(out, args.skip_build, "x86_64-pc-windows-msvc")
+    elif system == "Windows":
         windows(out, args.skip_build)
     elif system == "Darwin":
         macos(out, args.skip_build)
