@@ -11,11 +11,7 @@ use mxm_player::offline::{RenderError, inspect, list_plugins};
 use std::path::{Path, PathBuf};
 
 fn fixtures() -> Option<PathBuf> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the player lives two levels below the workspace root")
-        .join("target/fixtures/mxm-fixtures.clap");
+    let path = mxm_player_harness::build_dir().join("fixtures/mxm-fixtures.clap");
 
     if path.exists() {
         Some(path)

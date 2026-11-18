@@ -881,8 +881,7 @@ mod tests {
         // A refusal without a reason is a bug, and a wrong reason is worse: describing a plugin
         // that could not even be instantiated as "no audio ports" sends whoever reads the picker
         // looking at the wrong extension.
-        let bundle = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/fixtures/mxm-fixtures.clap");
+        let bundle = crate::staged_for_tests("fixtures/mxm-fixtures.clap");
         if !bundle.exists() {
             eprintln!("skipping: run `cargo xtask fixtures --release` to stage the fixtures");
             return;
@@ -920,8 +919,7 @@ mod tests {
         // run under one that starts at beat 0 and advances by each block; with no tempo there is no
         // transport at all. The probe writes the position it was given into its output, and the
         // live worker is held to the same in `t11_fx_chain`.
-        let bundle = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/fixtures/mxm-fixtures.clap");
+        let bundle = crate::staged_for_tests("fixtures/mxm-fixtures.clap");
         if !bundle.exists() {
             eprintln!("skipping: run `cargo xtask fixtures --release` to stage the fixtures");
             return;

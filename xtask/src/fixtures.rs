@@ -2,7 +2,7 @@
 //!
 //! The player's tests load these **by path**, never through its scanner, so a deliberately
 //! hostile fixture (one of them never returns from `process()`) cannot end up in an ordinary
-//! scan. Staging therefore goes to `target/fixtures/`, well away from `target/bundled/`.
+//! scan. Staging therefore goes to `fixtures/` in the build folder, well away from `bundled/`.
 
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
@@ -11,7 +11,8 @@ use std::process::Command;
 const PACKAGE: &str = "clap-fixtures";
 const BUNDLE_NAME: &str = "mxm-fixtures";
 
-/// Builds `clap-fixtures` and stages it as `target/fixtures/mxm-fixtures.clap`.
+/// Builds `clap-fixtures` and stages it as `<build folder>/fixtures/mxm-fixtures.clap`: the
+/// workspace's `target/`, or `CARGO_TARGET_DIR` where it is set.
 ///
 /// Extra arguments are passed through to `cargo build`, so `--release` and `--target` work as
 /// they do for `bundle`. Without `--release` a debug build is staged, which is what the
@@ -32,15 +33,18 @@ pub fn stage(args: &[String]) -> Result<()> {
     }
 
     let profile_dir = if release { "release" } else { "debug" };
-    let built = workspace_root
-        .join("target")
-        .join(profile_dir)
-        .join(library_file_name());
+    // The build folder `cargo build` just used: `CARGO_TARGET_DIR` where it is set (Linux's cargo
+    // wrapper sets it below `MXM_BUILD_ROOT`), or the workspace's `target/`; the fixtures are staged
+    // in it too, where the tests read them (`mxm_player_harness::build_dir`).
+    let build_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspace_root.join("target"));
+    let built = build_dir.join(profile_dir).join(library_file_name());
     if !built.exists() {
         bail!("Expected the fixture library at {}", built.display());
     }
 
-    let staging_dir = workspace_root.join("target").join("fixtures");
+    let staging_dir = build_dir.join("fixtures");
     std::fs::create_dir_all(&staging_dir)
         .with_context(|| format!("Could not create {}", staging_dir.display()))?;
 

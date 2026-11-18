@@ -15,7 +15,7 @@
 
 use mxm_player_harness::harness;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 const CHILD_MARKER: &str = "MXM_PLAYER_ROBUSTNESS_CHILD";
@@ -32,7 +32,7 @@ fn guarded_debug_mxm_para_07() -> PathBuf {
 }
 
 fn guarded_debug_plugin(binary_name: &str, package_name: &str) -> PathBuf {
-    let binary = workspace_root().join("target").join("debug").join(format!(
+    let binary = mxm_player_harness::build_dir().join("debug").join(format!(
         "{}{binary_name}{}",
         std::env::consts::DLL_PREFIX,
         std::env::consts::DLL_SUFFIX
@@ -49,7 +49,7 @@ fn guarded_debug_plugin(binary_name: &str, package_name: &str) -> PathBuf {
 /// wrapper whose `ProcessContext::try_send_event()` is under test (`send_event()` and its MXM
 /// guard until nice-plug 0.4.2).
 fn guarded_debug_output_fixture() -> PathBuf {
-    let binary = workspace_root().join("target").join("debug").join(format!(
+    let binary = mxm_player_harness::build_dir().join("debug").join(format!(
         "{}nice_plug_output_fixture{}",
         std::env::consts::DLL_PREFIX,
         std::env::consts::DLL_SUFFIX
@@ -60,14 +60,6 @@ fn guarded_debug_output_fixture() -> PathBuf {
         binary.display()
     );
     binary
-}
-
-fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the player lives two levels below the workspace root")
-        .to_path_buf()
 }
 
 /// How long a child gets before it is called a hang.

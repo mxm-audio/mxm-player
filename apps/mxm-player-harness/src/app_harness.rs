@@ -213,7 +213,7 @@ pub use crate::workspace_root;
 /// The directory holding the built mxm-mono-01 bundle, or `None` if it has not been built.
 /// Existing collection tests use this as both directory lookup and their mono-01 skip gate.
 pub fn bundled_dir() -> Option<PathBuf> {
-    let dir = workspace_root().join("target").join("bundled");
+    let dir = crate::build_dir().join("bundled");
     dir.join("mxm-mono-01.clap").exists().then_some(dir)
 }
 
@@ -221,12 +221,12 @@ pub fn bundled_dir() -> Option<PathBuf> {
 /// gate for a plugin's host tests, which must not wait on any other plugin's bundle (in its own
 /// repository the others are never built).
 pub fn bundled_dir_with(plugin: &str) -> Option<PathBuf> {
-    let dir = workspace_root().join("target").join("bundled");
+    let dir = crate::build_dir().join("bundled");
     dir.join(format!("{plugin}.clap")).exists().then_some(dir)
 }
 
 /// The shared bundle directory for a test that checks its own product artifact.
 pub fn any_bundled_dir() -> Option<PathBuf> {
-    let dir = workspace_root().join("target").join("bundled");
+    let dir = crate::build_dir().join("bundled");
     dir.is_dir().then_some(dir)
 }

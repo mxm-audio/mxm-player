@@ -16,13 +16,13 @@ use std::sync::{Arc, atomic::Ordering};
 const SOURCE: &str = "dk.mxm.mxm-mono-01";
 const FX: &str = "dk.mxm.mxm-bucket-delay";
 fn bundle(name: &str) -> PathBuf {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let built = mxm_player_harness::build_dir();
     let p = if name == "mxm-fixtures" {
-        root.join("target/fixtures/mxm-fixtures.clap")
+        built.join("fixtures/mxm-fixtures.clap")
     } else {
         std::env::var_os("MXM_PLAYER_TEST_BUNDLES")
             .map(PathBuf::from)
-            .unwrap_or_else(|| root.join("target/bundled"))
+            .unwrap_or_else(|| built.join("bundled"))
             .join(format!("{name}.clap"))
     };
     assert!(p.exists(), "required artifact missing: {}", p.display());

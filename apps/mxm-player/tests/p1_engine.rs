@@ -8,17 +8,14 @@
 use mxm_player::engine::audio::FakeBackend;
 use mxm_player::engine::{AudioConfig, Engine, EngineState};
 use mxm_player::events::input::Payload;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 const PLUGIN: &str = "dk.mxm.mxm-mono-01";
 
 fn bundle() -> Option<PathBuf> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the player lives two levels below the workspace root")
-        .join("target/bundled/mxm-mono-01.clap");
+    // Where `cargo xtask bundle` put it: this run's build folder (`mxm_player_harness::build_dir`).
+    let path = mxm_player_harness::build_dir().join("bundled/mxm-mono-01.clap");
 
     if path.exists() {
         Some(path)

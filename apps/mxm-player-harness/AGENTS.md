@@ -11,8 +11,9 @@ The harnesses MXM Player's tests drive it with, as a library every plugin's host
 - `harness` — an `AudioWorker` owned directly, with no engine and no device, so the callback runs on
   the test thread and allocation, event order and the effect chain (`Harness::with_fx`) are
   assertable
-- `workspace_root` — the repository under test, so bundles are found in its `target/bundled` and
-  the fixture plugins in its `target/fixtures`
+- `workspace_root` — the repository under test; `build_dir` — its build folder, `CARGO_TARGET_DIR`
+  or else its `target/`, so bundles are found in its `bundled` and the fixture plugins in its
+  `fixtures`, as the xtask staged them on this system
 
 They were the player's `tests/app_harness` and `tests/harness` modules until each plugin's tests
 through the player moved to `plugins/<plugin>/host-tests` (`plans/plan-repo-split.md` in the

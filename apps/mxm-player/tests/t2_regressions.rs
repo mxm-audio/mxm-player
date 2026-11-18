@@ -90,9 +90,7 @@ fn a_symlinked_copy_is_collapsed_rather_than_listed_twice() {
 fn the_browser_shows_a_refusal_reason_for_every_unsupported_plugin() {
     // The refusal path is what keeps third-party readiness honest, and it is only honest if the
     // reason reaches the browser.
-    let fixtures = app_harness::workspace_root()
-        .join("target")
-        .join("fixtures");
+    let fixtures = mxm_player_harness::build_dir().join("fixtures");
     if !fixtures.join("mxm-fixtures.clap").exists() {
         eprintln!("skipping: run `cargo xtask fixtures --release`");
         return;

@@ -1678,8 +1678,7 @@ mod tests {
     /// `t11_fx_chain`: with no stream only the main-thread flush consumes it.
     #[test]
     fn an_effect_with_nothing_running_takes_its_editors_edits() {
-        let bundle = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/fixtures/mxm-fixtures.clap");
+        let bundle = crate::staged_for_tests("fixtures/mxm-fixtures.clap");
         if !bundle.exists() {
             eprintln!("skipping: run `cargo xtask fixtures --release` to stage the fixtures");
             return;
@@ -1709,8 +1708,7 @@ mod tests {
 
     #[test]
     fn effect_restart_and_port_requests_stop_renegotiate_and_allow_restart() {
-        let bundle = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/fixtures/mxm-fixtures.clap");
+        let bundle = crate::staged_for_tests("fixtures/mxm-fixtures.clap");
         if !bundle.exists() {
             eprintln!("skipping: run `cargo xtask fixtures --release` to stage the fixtures");
             return;

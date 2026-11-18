@@ -36,6 +36,11 @@ Owns `src/{main.rs, fixtures.rs}` and `Cargo.toml`. Bundling and control-map sta
   hostile fixture out of an ordinary plugin scan — see
   [`tests/clap-fixtures/AGENTS.md`](../tests/clap-fixtures/AGENTS.md). Do not merge them.
 - Fixtures do not go through `bundle` and are not listed in `bundler.toml`.
+- **`target/` here is the run's build folder**: `CARGO_TARGET_DIR` where it is set, as Linux's cargo
+  wrapper sets it below `MXM_BUILD_ROOT`, or else the checkout's `target/`. `bundle`, `fetch` and
+  `fixtures` write there, and the tests read there (`mxm_player_harness::build_dir`, and
+  `staged_for_tests` in the player's own): read from the checkout's `target/` on Linux, they loaded
+  the Windows DLLs staged there (2026-11-18).
 - **`bundle` and `fixtures` build the outermost workspace on the path**, so a worktree nested inside
   the repository builds the parent checkout: see
   [`crates/mxm-xtask/AGENTS.md`](https://github.com/mxm-audio/mxm-kit/blob/main/crates/mxm-xtask/AGENTS.md). `fixtures` copies to

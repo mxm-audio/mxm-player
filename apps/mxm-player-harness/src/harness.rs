@@ -60,7 +60,7 @@ pub fn fixtures() -> Option<PathBuf> {
 }
 
 fn artifact(relative: &str, hint: &str) -> Option<PathBuf> {
-    let path = crate::workspace_root().join(relative);
+    let path = crate::build_dir().join(relative.trim_start_matches("target/"));
 
     if path.exists() {
         Some(path)

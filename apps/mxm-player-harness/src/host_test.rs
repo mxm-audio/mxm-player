@@ -16,7 +16,7 @@ use std::path::PathBuf;
 /// when it has not been built — the gate a host test skips on. Never another plugin's bundle: in a
 /// repository of one plugin's own, the others are never built.
 pub fn plugin_bundle(plugin: &str) -> Option<(PathBuf, PathBuf)> {
-    let dir = crate::workspace_root().join("target").join("bundled");
+    let dir = crate::build_dir().join("bundled");
     let file = dir.join(format!("{plugin}.clap"));
     file.exists().then_some((dir, file))
 }

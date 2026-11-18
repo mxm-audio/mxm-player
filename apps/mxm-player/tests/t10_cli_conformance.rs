@@ -692,9 +692,7 @@ fn player_with_cli(name: &str) -> Option<(mxm_player::ui::PlayerApp, PathBuf)> {
 /// Where the staged fixture bundle lives, or `None` when `cargo xtask fixtures --release` has
 /// not been run — the rail's rows are skipped then, with a line saying so.
 fn fixtures_dir() -> Option<PathBuf> {
-    let dir = app_harness::workspace_root()
-        .join("target")
-        .join("fixtures");
+    let dir = mxm_player_harness::build_dir().join("fixtures");
     dir.join("mxm-fixtures.clap").exists().then_some(dir)
 }
 

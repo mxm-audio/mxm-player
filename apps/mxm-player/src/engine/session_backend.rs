@@ -249,7 +249,9 @@ impl AudioStream for SteppedStream {
             let mut buffer = vec![0.0f32; frames * channels];
 
             while !stop.load(Ordering::Acquire) {
-                // Spend a granted block, if there is one.
+                // Spend a granted block, if there is one. `fetch_update` is `try_update` from Rust
+                // 1.99, newer than this crate's floor (1.95), so the old name stays.
+                #[allow(deprecated)]
                 let granted = control
                     .credits
                     .fetch_update(Ordering::AcqRel, Ordering::Acquire, |c| {
