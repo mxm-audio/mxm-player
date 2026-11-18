@@ -20,6 +20,11 @@ use std::sync::atomic::Ordering;
 const SOURCE: &str = "dk.mxm.mxm-mono-01";
 const EFFECT: &str = "dk.mxm.fixture.effect";
 const EFFECT_MONO: &str = "dk.mxm.fixture.effect-mono";
+/// The same effect offering mono in, stereo out first and stereo in, stereo out second, as the
+/// MXM effects do.
+const EFFECT_LAYOUTS: &str = "dk.mxm.fixture.effect-layouts";
+/// The same effect, stereo, its output held back by the latency it reports.
+const EFFECT_LATENCY: &str = "dk.mxm.fixture.effect-latency";
 const GUI: usize = 0;
 const BLOCK: usize = 256;
 /// Enough blocks to hear the note, its release, the echo's tail and the silence after.
@@ -30,6 +35,8 @@ const ECHO_DELAY: usize = 480;
 const ECHO_FEEDBACK: f32 = 0.5;
 const AMOUNT: f32 = 0.5;
 const EFFECT_TAIL: usize = 5760;
+/// What `effect-latency` reports and holds its output back by.
+const EFFECT_LATENCY_FRAMES: usize = 1000;
 /// What the fixture's residual can be once it snaps: twelve half-lives of feedback.
 const TAIL_TOLERANCE: f32 = 1e-3;
 
@@ -664,5 +671,185 @@ fn the_chain_is_told_each_chunks_first_sample_position() {
     assert!(
         (f64::from(second) - one_block).abs() < 1e-6,
         "the second chunk starts one chunk in: {second}, expected {one_block}"
+    );
+}
+
+// ------------------------------------------------------------------------------------------------
+// An effect's layout follows what feeds it, and an export takes its latency back out
+// ------------------------------------------------------------------------------------------------
+
+/// **An effect offering both widths takes the one that reaches it**, wherever it sits: a stereo
+/// source gives it stereo in, a mono effect before it gives it mono in, and a reorder chooses
+/// again. First-compatible took mono in every time, so every MXM effect (each lists mono in first)
+/// summed a stereo chain to mono (the owner's drum loops, 2026-11-18).
+#[test]
+fn an_effect_offering_both_widths_takes_the_one_that_reaches_it() {
+    let (Some(source), Some(bundle)) = (mxm_mono_01(), fixtures()) else {
+        return;
+    };
+    let dir = scratch("layouts");
+    let mut app = app_in(&dir);
+    app.load(source, SOURCE.to_owned());
+    app.add_fx(bundle.clone(), EFFECT_LAYOUTS.to_owned())
+        .expect("the two-layout effect loads");
+    let inputs = |app: &mut mxm_player::ui::PlayerApp| -> Vec<u32> {
+        app.state().fx.iter().map(|f| f.input_channels).collect()
+    };
+    assert_eq!(inputs(&mut app), [2], "after a stereo source");
+
+    app.add_fx(bundle, EFFECT_MONO.to_owned())
+        .expect("the mono effect loads");
+    app.move_fx(1, 0).expect("the mono effect goes first");
+    assert_eq!(
+        inputs(&mut app),
+        [1, 1],
+        "after a mono effect, the two-layout one takes mono in"
+    );
+    app.move_fx(0, 1).expect("and back");
+    assert_eq!(inputs(&mut app), [2, 1], "after the stereo source again");
+}
+
+/// The offline chain chooses the same way, proved by the audio: a stereo signal whose right side
+/// is silent stays silent on the right through an effect fed it in stereo, where an effect fed the
+/// sum would echo the left side on both.
+#[test]
+fn the_offline_chain_feeds_an_effect_in_stereo_when_the_signal_is_stereo() {
+    use mxm_player::offline::{
+        EffectSpec, EventKind, RenderConfig, ScheduledEvent, render, through_effects,
+    };
+    let (Some(source), Some(bundle)) = (mxm_mono_01(), fixtures()) else {
+        return;
+    };
+    let frames = (BLOCKS * BLOCK) as u64;
+    let note = |frame, on| ScheduledEvent {
+        frame,
+        kind: if on {
+            EventKind::NoteOn {
+                channel: 0,
+                key: 60,
+                velocity: 0.8,
+                note_id: 1,
+            }
+        } else {
+            EventKind::NoteOff {
+                channel: 0,
+                key: 60,
+                velocity: 0.0,
+                note_id: 1,
+            }
+        },
+    };
+    let config = RenderConfig {
+        sample_rate: harness::SAMPLE_RATE,
+        block_size: BLOCK as u32,
+        total_frames: frames,
+        state: None,
+        tempo: None,
+    };
+    let mut dry = render(
+        &source,
+        SOURCE,
+        config,
+        &[note(2 * BLOCK as u64, true), note(40 * BLOCK as u64, false)],
+    )
+    .expect("the source renders");
+    assert_eq!(dry.channels.len(), 2, "a stereo source");
+    dry.channels[1].fill(0.0);
+    let left = dry.channels[0].clone();
+    assert!(left.iter().any(|x| *x != 0.0), "the source sounded");
+
+    let wet = through_effects(
+        dry,
+        &[EffectSpec {
+            bundle: bundle.clone(),
+            plugin_id: EFFECT_LAYOUTS.to_owned(),
+            state: None,
+            events: Vec::new(),
+        }],
+        harness::SAMPLE_RATE,
+        BLOCK as u32,
+        None,
+    )
+    .expect("the chain renders");
+
+    let last = left
+        .iter()
+        .rposition(|x| *x != 0.0)
+        .expect("the source sounded");
+    let mut echo = Echo::new();
+    let expected = vec![
+        left.iter().map(|&x| echo.step(x)).collect::<Vec<f32>>(),
+        vec![0.0; left.len()],
+    ];
+    assert_matches(
+        &wet.channels,
+        &expected,
+        last + EFFECT_TAIL,
+        "a stereo signal through the two-layout effect",
+    );
+    assert!(
+        wet.channels[1].iter().all(|x| *x == 0.0),
+        "the silent side stays silent: the effect was not fed the sum"
+    );
+}
+
+/// The latency fixture really holds its output back: live, with nothing to compensate it, it is
+/// the plain effect exactly `EFFECT_LATENCY_FRAMES` later. Which is what makes the export test
+/// below able to fail.
+#[test]
+fn the_latency_fixture_is_the_plain_effect_late_by_its_latency() {
+    let Some((_, last)) = dry(NOTE) else {
+        return;
+    };
+    let plain = channels_of(&run(&[EFFECT], NOTE).expect("built above"));
+    let late = channels_of(&run(&[EFFECT_LATENCY], NOTE).expect("built above"));
+    let expected: Vec<Vec<f32>> = plain
+        .iter()
+        .map(|p| {
+            let mut shifted = vec![0.0; EFFECT_LATENCY_FRAMES];
+            shifted.extend_from_slice(&p[..p.len() - EFFECT_LATENCY_FRAMES]);
+            shifted
+        })
+        .collect();
+    // Each snaps its residue to silence at its own block's end, so past the tail it is held to
+    // the tolerance, as every chain comparison here is.
+    assert_matches(
+        &late,
+        &expected,
+        last + EFFECT_TAIL + EFFECT_LATENCY_FRAMES,
+        "the latency fixture, live",
+    );
+}
+
+/// **An export takes an effect's reported latency back out**: through the latency fixture it is
+/// the export through the plain effect, to the bit until the tail has passed. Without it, oldify's
+/// 41.6 ms put every export behind its grid and cut its last 41.6 ms (the owner's drum loops,
+/// 2026-11-18).
+#[test]
+fn an_export_takes_an_effects_latency_back_out() {
+    let (Some(source), Some(bundle)) = (mxm_mono_01(), fixtures()) else {
+        return;
+    };
+    let dir = scratch("latency");
+    let mut app = app_in(&dir);
+    app.load(source, SOURCE.to_owned());
+    app.toggle_step_note(0, 60);
+    app.set_normalise_export(false);
+    let alone = wav_channels(&app.export_audio("alone").expect("the source exports"));
+    let last = last_sounding_frame(&alone).expect("the export sounded");
+
+    app.add_fx(bundle.clone(), EFFECT.to_owned())
+        .expect("the plain effect loads");
+    let plain = wav_channels(&app.export_audio("plain").expect("the chain exports"));
+    app.remove_fx(0).expect("the plain effect leaves");
+    app.add_fx(bundle, EFFECT_LATENCY.to_owned())
+        .expect("the latency effect loads");
+    let late = wav_channels(&app.export_audio("late").expect("the chain exports"));
+
+    assert_matches(
+        &late,
+        &plain,
+        (last + EFFECT_TAIL).min(plain[0].len()),
+        "an export through an effect with latency, against the same effect without it",
     );
 }

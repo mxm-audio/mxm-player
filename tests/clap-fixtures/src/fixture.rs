@@ -3,7 +3,7 @@
 //! Every fixture behaves identically except where its spec says otherwise, so the interesting
 //! differences stay in `spec.rs` rather than being spread across ten near-identical plugins.
 
-use crate::spec::{Behaviour, FixtureSpec};
+use crate::spec::{Behaviour, FixtureSpec, PortDecl};
 use clack_extensions::audio_ports::{
     AudioPortInfo, AudioPortInfoWriter, AudioPortType, PluginAudioPorts, PluginAudioPortsImpl,
 };
@@ -11,6 +11,7 @@ use clack_extensions::audio_ports_config::{
     AudioPortConfigWriter, AudioPortsConfiguration, MainPortInfo, PluginAudioPortsConfig,
     PluginAudioPortsConfigImpl,
 };
+use clack_extensions::latency::{PluginLatency, PluginLatencyImpl};
 use clack_extensions::log::{HostLog, LogSeverity};
 use clack_extensions::note_ports::{
     NotePortInfo, NotePortInfoWriter, PluginNotePorts, PluginNotePortsImpl,
@@ -48,6 +49,13 @@ pub const ECHO_FEEDBACK: f32 = 0.5;
 /// silent before it asks to sleep: twelve echoes at 0.5 each is under -70 dB.
 pub const EFFECT_TAIL_FRAMES: u32 = ECHO_DELAY_FRAMES as u32 * 12;
 
+/// What `effect-latency` reports through the `latency` extension, and delays its output by. Not a
+/// multiple of a block or of the echo, so a host that compensates it by any other amount shows.
+pub const EFFECT_LATENCY_FRAMES: u32 = 1000;
+
+/// `selected` while no configuration has been selected: the static ports stand.
+const NO_SELECTION: u32 = u32::MAX;
+
 /// Shared, thread-safe fixture state.
 pub struct FixtureShared {
     pub spec: &'static FixtureSpec,
@@ -65,6 +73,8 @@ pub struct FixtureShared {
     re_requested: AtomicBool,
     /// How many voices the `voice-counter` fixture believes it is holding.
     voices: AtomicU32,
+    /// The index of the configuration the host selected, or [`NO_SELECTION`].
+    selected: AtomicU32,
 }
 
 impl FixtureShared {
@@ -78,7 +88,30 @@ impl FixtureShared {
             main_thread_calls: AtomicU32::new(0),
             re_requested: AtomicBool::new(false),
             voices: AtomicU32::new(0),
+            selected: AtomicU32::new(NO_SELECTION),
         }
+    }
+
+    /// The audio ports as they stand: the selected configuration's, when it switches the ports,
+    /// otherwise the spec's static ones.
+    fn ports(&self, is_input: bool) -> &'static [PortDecl] {
+        let selected = self.selected.load(Ordering::Relaxed);
+        let layout = self
+            .spec
+            .configs
+            .and_then(|configs| configs.get(selected as usize))
+            .and_then(|config| config.layout);
+        match (layout, is_input) {
+            (Some(layout), true) => layout.inputs,
+            (Some(layout), false) => layout.outputs,
+            (None, true) => self.spec.audio_inputs,
+            (None, false) => self.spec.audio_outputs,
+        }
+    }
+
+    /// The effect's tail: its echoes, after whatever it is still holding back as latency.
+    fn tail_frames(&self) -> u32 {
+        EFFECT_TAIL_FRAMES + self.spec.latency
     }
 
     fn value(&self) -> f64 {
@@ -141,6 +174,10 @@ impl Plugin for Fixture {
         if shared.is_some_and(|s| s.spec.configs.is_some()) {
             builder.register::<PluginAudioPortsConfig>();
         }
+        // Only `effect-latency` reports a latency; the rest have none to report.
+        if shared.is_some_and(|s| s.spec.latency > 0) {
+            builder.register::<PluginLatency>();
+        }
     }
 }
 
@@ -164,20 +201,11 @@ pub fn new_main_thread<'a>(
 
 impl PluginAudioPortsImpl for FixtureMainThread<'_> {
     fn count(&mut self, is_input: bool) -> u32 {
-        let ports = if is_input {
-            self.shared.spec.audio_inputs
-        } else {
-            self.shared.spec.audio_outputs
-        };
-        ports.len() as u32
+        self.shared.ports(is_input).len() as u32
     }
 
     fn get(&mut self, index: u32, is_input: bool, writer: &mut AudioPortInfoWriter) {
-        let ports = if is_input {
-            self.shared.spec.audio_inputs
-        } else {
-            self.shared.spec.audio_outputs
-        };
+        let ports = self.shared.ports(is_input);
         let Some(port) = ports.get(index as usize) else {
             return;
         };
@@ -190,12 +218,8 @@ impl PluginAudioPortsImpl for FixtureMainThread<'_> {
         // Without the declaration a host - clap-validator included - never shares a buffer, and
         // the in-place path would go unexercised. No other fixture declares a pair.
         let in_place_pair = if self.shared.spec.behaviour == Behaviour::Effect {
-            let other = if is_input {
-                self.shared.spec.audio_outputs
-            } else {
-                self.shared.spec.audio_inputs
-            };
-            other
+            self.shared
+                .ports(!is_input)
                 .get(index as usize)
                 .filter(|o| o.channel_count == port.channel_count)
                 .map(|_| id)
@@ -241,7 +265,10 @@ impl PluginAudioPortsConfigImpl for FixtureMainThread<'_> {
             name: config.name.as_bytes(),
             input_port_count: config.input_port_count,
             output_port_count: config.output_port_count,
-            main_input: None,
+            main_input: config.main_input_channels.map(|channels| MainPortInfo {
+                channel_count: channels,
+                port_type: AudioPortType::from_channel_count(channels),
+            }),
             main_output: config.main_output_channels.map(|channels| MainPortInfo {
                 channel_count: channels,
                 port_type: AudioPortType::from_channel_count(channels),
@@ -249,10 +276,26 @@ impl PluginAudioPortsConfigImpl for FixtureMainThread<'_> {
         });
     }
 
-    fn select(&mut self, _config_id: ClapId) -> Result<(), PluginError> {
-        // Every advertised configuration is deliberately outside the player's envelope, so a
-        // correct host never gets here. Accepting the call keeps the failure the host's decision.
+    fn select(&mut self, config_id: ClapId) -> Result<(), PluginError> {
+        // `no-config`'s configurations are all outside the player's envelope, so a correct host
+        // never selects one; accepting the call keeps that failure the host's decision, and with
+        // no layout of their own they leave the ports as they are. `effect-layouts`'s switch them.
+        let index = self
+            .shared
+            .spec
+            .configs
+            .and_then(|configs| configs.iter().position(|c| c.id == config_id.get()))
+            .ok_or(PluginError::Message("no such configuration"))?;
+        self.shared.selected.store(index as u32, Ordering::Relaxed);
         Ok(())
+    }
+}
+
+// --- latency ---------------------------------------------------------------------------------
+
+impl PluginLatencyImpl for FixtureMainThread<'_> {
+    fn get(&mut self) -> u32 {
+        self.shared.spec.latency
     }
 }
 
@@ -382,6 +425,12 @@ pub struct FixtureAudioProcessor<'a> {
     echo_lines: Vec<EchoLine>,
     /// The ring position every line writes at next.
     echo_write: usize,
+    /// `effect-latency`'s hold-back: one ring of `latency` frames per output channel, laid out
+    /// line after line, the input going in and what went in `latency` frames ago coming out to
+    /// the echo. Empty when the fixture has no latency.
+    latency_lines: Vec<f32>,
+    /// The ring position every hold-back line writes at next.
+    latency_write: usize,
     /// Frames since the last nonzero input sample, saturating. Starts past the tail: a fresh
     /// line has nothing to ring.
     frames_since_input: u32,
@@ -437,16 +486,19 @@ impl<'a> PluginAudioProcessor<'a, FixtureShared, FixtureMainThread<'a>>
 
         // The effect's only allocation: one line per output channel, here rather than in
         // `process`.
-        let echo_lines = if shared.spec.behaviour == Behaviour::Effect {
+        // The ports as the selected configuration left them.
+        let (echo_lines, latency_lines) = if shared.spec.behaviour == Behaviour::Effect {
             let channels: usize = shared
-                .spec
-                .audio_outputs
+                .ports(false)
                 .iter()
                 .map(|port| port.channel_count as usize)
                 .sum();
-            vec![EchoLine::SILENT; channels]
+            (
+                vec![EchoLine::SILENT; channels],
+                vec![0.0; channels * shared.spec.latency as usize],
+            )
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
 
         Ok(Self {
@@ -457,7 +509,9 @@ impl<'a> PluginAudioProcessor<'a, FixtureShared, FixtureMainThread<'a>>
             log_threads,
             echo_lines,
             echo_write: 0,
-            frames_since_input: EFFECT_TAIL_FRAMES + 1,
+            latency_lines,
+            latency_write: 0,
+            frames_since_input: shared.tail_frames() + 1,
         })
     }
 
@@ -544,7 +598,9 @@ impl<'a> PluginAudioProcessor<'a, FixtureShared, FixtureMainThread<'a>>
         if self.shared.spec.behaviour == Behaviour::Effect {
             self.echo_lines.fill(EchoLine::SILENT);
             self.echo_write = 0;
-            self.frames_since_input = EFFECT_TAIL_FRAMES + 1;
+            self.latency_lines.fill(0.0);
+            self.latency_write = 0;
+            self.frames_since_input = self.shared.tail_frames() + 1;
         }
     }
 }
@@ -571,6 +627,8 @@ impl FixtureAudioProcessor<'_> {
         let frames = audio.frames_count() as usize;
         let was_sleeping = self.sleeping();
         let write_start = self.echo_write;
+        let latency = self.shared.spec.latency as usize;
+        let latency_start = self.latency_write;
         // The index of the last nonzero input sample this block, across every channel.
         let mut last_input: Option<usize> = None;
         // Lines are laid out port after port, output channel after output channel.
@@ -593,12 +651,28 @@ impl FixtureAudioProcessor<'_> {
                 let Some(pair) = channels.channel_pair(c) else {
                     break;
                 };
+                let held = &mut self.latency_lines
+                    [(port_lines + c) * latency..(port_lines + c + 1) * latency];
 
                 let mut write = write_start;
+                let mut held_write = latency_start;
                 let mut run = |i: usize, x: f32| -> f32 {
                     if x != 0.0 {
                         last_input = Some(i);
                     }
+                    // What went in `latency` frames ago is what the echo hears now.
+                    let x = if latency == 0 {
+                        x
+                    } else {
+                        let out = held[held_write];
+                        held[held_write] = x;
+                        held_write = if held_write + 1 == latency {
+                            0
+                        } else {
+                            held_write + 1
+                        };
+                        out
+                    };
                     let y = line.step(write, amount, x);
                     write = if write + 1 == ECHO_DELAY_FRAMES {
                         0
@@ -647,6 +721,9 @@ impl FixtureAudioProcessor<'_> {
         }
 
         self.echo_write = (write_start + frames) % ECHO_DELAY_FRAMES;
+        if latency > 0 {
+            self.latency_write = (latency_start + frames) % latency;
+        }
         self.frames_since_input = match last_input {
             Some(i) => (frames - 1 - i) as u32,
             None => self.frames_since_input.saturating_add(frames as u32),
@@ -655,6 +732,7 @@ impl FixtureAudioProcessor<'_> {
         let sleeping = self.sleeping();
         if sleeping {
             self.echo_lines.fill(EchoLine::SILENT);
+            self.latency_lines.fill(0.0);
         }
 
         // Asleep at both ends of the block with nothing fed in: every output sample was exactly
@@ -677,7 +755,7 @@ impl FixtureAudioProcessor<'_> {
 
     /// Whether the effect's input has been silent for longer than its tail.
     fn sleeping(&self) -> bool {
-        self.frames_since_input > EFFECT_TAIL_FRAMES
+        self.frames_since_input > self.shared.tail_frames()
     }
 
     /// Tracks what this fixture is holding, so a host's recovery is provable rather than assumed.
@@ -772,7 +850,7 @@ impl FixtureAudioProcessor<'_> {
 impl PluginTailImpl for FixtureAudioProcessor<'_> {
     fn get(&self) -> TailLength {
         if self.shared.spec.behaviour == Behaviour::Effect {
-            return TailLength::Finite(EFFECT_TAIL_FRAMES);
+            return TailLength::Finite(self.shared.tail_frames());
         }
         if self.shared.spec.behaviour != Behaviour::TailShift {
             return TailLength::default();

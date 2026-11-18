@@ -65,11 +65,21 @@ use**. *"Generally when an effect or a synth is doing nothing it should not use 
 
 - **An effect is a plugin with exactly one audio input, judged by its ports.** `src/envelope.rs`
   has a second negotiation, `negotiate_effect`, beside the source's: one main input and one main
-  output, mono or stereo each, chosen through `audio-ports-config` first-compatible as the source's
-  is, and refused with the reason otherwise. Discovery classifies every plugin for **both** slots
+  output, mono or stereo each, chosen through `audio-ports-config`: the first compatible
+  configuration whose input is as wide as what reaches the effect (`negotiate_effect_for`), else the
+  first compatible one, and refused with the reason otherwise. Discovery classifies every plugin for **both** slots
   (`Found.support` and `Found.effect`), on two instances, because `audio-ports-config::select` is a
   choice made on an instance. A plugin advertising both shapes qualifies for both; each picker
   shows its refusals with their reasons, as the plugin picker always has.
+- **What reaches an effect decides its layout, chosen again at every start.** Every MXM effect lists
+  mono in, stereo out first and stereo in, stereo out after it, so first-compatible gave each one
+  mono in whatever fed it, and the adapter summed a stereo chain to mono at every effect; the
+  owner's drum loops came out mono (2026-11-18). The width is the chain's to know — the source's,
+  then each effect's output in turn — and an add, a move, a removal or a new source changes it, so
+  `Engine::negotiate_chain` walks the chain on every start, while every instance is deactivated as
+  `select` requires. The offline chain passes its signal's width and the harness walks it the same
+  way; the picker, which has no chain, still takes first-compatible. `t11_fx_chain` holds it on
+  `dk.mxm.fixture.effect-layouts`, structurally and by the audio.
 - **The chain is the engine's, and a topology change goes through stop-and-return.**
   `src/engine/fx.rs`: an `FxSlot` on the GUI thread (entry, instance, envelope, switch), an
   `FxStage` on the audio thread (its processor in a `ProcessorOwner`, its own buffers sized at
@@ -1717,6 +1727,13 @@ so the code stopped deciding it.
   release from 200 to 250 ms, and the previous figures (0.100 s and 0.239 s) were the old patch's.
   The threshold itself did not need to change, because what justifies −90 is the *shape* of the
   curve rather than where it starts.
+- **Every reported latency is taken back out.** The source renders through `offline::render_aligned`
+  and each effect in `through_effects` runs its reported latency past the end on silence, and the
+  first that many frames are dropped, so frame zero is the sequence's first beat and the file is
+  still exactly the sequence. Without it oldify's 41.6 ms put every export behind its grid and cut
+  its last 41.6 ms (the owner's drum loops, 2026-11-18). Plain `offline::render` stays
+  uncompensated: every host test and golden render goes through it. `t11_fx_chain` holds it on
+  `dk.mxm.fixture.effect-latency`, whose output live is the plain effect's exactly that much later.
 - **32-bit float, live sample rate, the plugin's channel count.** Float is what makes normalising to
   exactly 0 dBFS safe — fixed point would risk inter-sample overshoot.
 - **Normalisation is a checkbox, on by default.** Right for making samples, wrong for comparing two

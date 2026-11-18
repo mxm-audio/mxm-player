@@ -12,7 +12,7 @@ pub mod processor;
 pub mod session_backend;
 pub mod stream;
 
-use crate::envelope::{EffectEnvelope, Envelope, Refusal, negotiate, negotiate_effect};
+use crate::envelope::{EffectEnvelope, Envelope, Refusal, negotiate, negotiate_effect_for};
 use crate::events::input::{
     MAX_INPUT_PRODUCERS, PRODUCER_QUEUE_CAPACITY, PanicEpoch, SourceId, TimedEvent,
 };
@@ -572,7 +572,18 @@ impl Engine {
         }
         self.stop_now()?;
         let (entry, mut instance, shared) = Self::instantiate(bundle, plugin_id)?;
-        let envelope = negotiate_effect(&mut instance).map_err(|r: Refusal| format!("it {r}"))?;
+        // For what the chain's end gives it now; the next start chooses again for wherever it is.
+        let feed = self
+            .fx
+            .last()
+            .map(|slot| slot.envelope.output.channel_count)
+            .or_else(|| {
+                self.loaded
+                    .as_ref()
+                    .map(|loaded| loaded.envelope.audio.channel_count)
+            });
+        let envelope =
+            negotiate_effect_for(&mut instance, feed).map_err(|r: Refusal| format!("it {r}"))?;
         let id = self.next_fx_id;
         self.next_fx_id += 1;
         self.fx.push(FxSlot {
@@ -712,6 +723,23 @@ impl Engine {
         ext.load(&mut handle, &mut input).map_err(|e| e.to_string())
     }
 
+    /// Chooses every effect's layout for the signal that reaches it — the source's width, then each
+    /// effect's output in turn — while every instance is deactivated, as `audio-ports-config`
+    /// requires. Every start runs it, so an add, a move, a removal and a new source all land here:
+    /// an effect's layout is the chain's to decide, not fixed when it was added.
+    fn negotiate_chain(&mut self) -> Result<(), String> {
+        let Some(loaded) = self.loaded.as_ref() else {
+            return Ok(());
+        };
+        let mut channels = loaded.envelope.audio.channel_count;
+        for (index, slot) in self.fx.iter_mut().enumerate() {
+            slot.envelope = negotiate_effect_for(&mut slot.instance, Some(channels))
+                .map_err(|r| format!("effect {} {r}", index + 1))?;
+            channels = slot.envelope.output.channel_count;
+        }
+        Ok(())
+    }
+
     /// Activates every effect and builds its stage, after the source has been activated.
     ///
     /// On any failure the stages already built are dropped — each owner's `Drop` hands its
@@ -792,12 +820,14 @@ impl Engine {
 
     /// Starts audio with the current configuration.
     pub fn start(&mut self, backend: &dyn Backend) -> Result<(), String> {
-        let Some(loaded) = self.loaded.as_mut() else {
+        if self.loaded.is_none() {
             return Err("no plugin is loaded".to_owned());
-        };
+        }
         if self.stream.is_some() {
             return Ok(());
         }
+        self.negotiate_chain()?;
+        let loaded = self.loaded.as_mut().expect("checked above");
 
         // Opened for the widest output in the chain: a stereo chorus after a mono synth wants
         // two channels, and a bypassed stage's absence is adapted in the interleave, not by
@@ -1235,11 +1265,7 @@ impl Engine {
                         loaded.envelope =
                             negotiate(&mut loaded.instance).map_err(|e| e.to_string())?;
                     }
-                    for slot in &mut self.fx {
-                        slot.envelope =
-                            negotiate_effect(&mut slot.instance).map_err(|e| e.to_string())?;
-                    }
-                    Ok(())
+                    self.negotiate_chain()
                 })();
                 match result {
                     Ok(()) => {

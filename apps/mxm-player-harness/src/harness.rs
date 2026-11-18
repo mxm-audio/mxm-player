@@ -14,7 +14,7 @@ use mxm_player::engine::stream::ProcessorOwner;
 use mxm_player::engine::{
     COMMAND_CAPACITY, MIDI_OUT_CAPACITY, PLUGIN_OUTPUT_CAPACITY, PluginOutput,
 };
-use mxm_player::envelope::{Envelope, negotiate, negotiate_effect};
+use mxm_player::envelope::{Envelope, negotiate, negotiate_effect_for};
 use mxm_player::events::input::{
     PRODUCER_QUEUE_CAPACITY, PanicEpoch, Payload, SourceId, TimedEvent,
 };
@@ -220,12 +220,16 @@ impl Harness {
         // bound as the source, its processor owned by a stage, its return queue kept here.
         let mut stages = Vec::with_capacity(fx.len());
         let mut kept = Vec::with_capacity(fx.len());
+        // Each effect takes the layout for the width that reaches it, as the engine's start does.
+        let mut feed = envelope.audio.channel_count;
         for (position, (fx_bundle, fx_id)) in fx.iter().enumerate() {
             // SAFETY: as above - our own artifacts, loaded by path.
             let fx_entry =
                 unsafe { mxm_player::entry::load(fx_bundle) }.map_err(|e| e.to_string())?;
             let (fx_shared, mut fx_instance) = instantiate(&fx_entry, fx_id)?;
-            let fx_envelope = negotiate_effect(&mut fx_instance).map_err(|r| r.to_string())?;
+            let fx_envelope =
+                negotiate_effect_for(&mut fx_instance, Some(feed)).map_err(|r| r.to_string())?;
+            feed = fx_envelope.output.channel_count;
             let fx_tail: Option<PluginTail> = fx_instance.plugin_shared_handle().get_extension();
             let fx_params: Option<clack_extensions::params::PluginParams> =
                 fx_instance.plugin_shared_handle().get_extension();

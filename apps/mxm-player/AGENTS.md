@@ -41,8 +41,9 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
 - **The live and offline paths share every rule both encode** (the transport, the note-on encoder): a new
   one joins them the same way, and channel adaptation is shared before any effect wider than stereo is
   admitted. Two loops, by design. [NOTES.md § Two hosting loops](NOTES.md#two-hosting-loops-and-the-rules-they-share)
-- **The chain** (`src/engine/fx.rs`): an effect has one main input and one main output. Add, remove and move
-  stop the worker, edit the slots and restart, the source untouched; at most `MAX_FX`; effects activate
+- **The chain** (`src/engine/fx.rs`): an effect has one main input and one main output, **its layout chosen
+  for the width that reaches it at every start** (`Engine::negotiate_chain`; offline and in the harness
+  alike). Add, remove and move stop the worker, edit the slots and restart, the source untouched; at most `MAX_FX`; effects activate
   after the source and deactivate before it on every path. **Off is uncalled**: input passes to the bit;
   back on is CLAP `reset` first; edits still arrive through `params.flush` (`FxStage::flush_params`, or
   `FxSlot::flush_params_while_inactive` with no stream). A tail countdown restarts on every chunk carrying
@@ -150,7 +151,8 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
   effect that is on, with the locks on every step, under the session's tempo and a playing transport
   (`RenderConfig::tempo`, `events::transport`, as live playback; both report a block at its first
   sample, CLAP's definition, held by the transport-probe fixture); a plugin without `state` is refused; `normalise <on|off>`;
-  a render is exactly the sequence. [NOTES.md § Export](NOTES.md#exporting-audio-renders-a-snapshot-and-says-what-it-cannot-promise) · [§ The file](NOTES.md#the-exported-file-is-exactly-the-sequence)
+  a render is exactly the sequence, **every reported latency taken back out** (`offline::render_aligned`,
+  `through_effects`; plain `render` stays as host tests pin it). [NOTES.md § Export](NOTES.md#exporting-audio-renders-a-snapshot-and-says-what-it-cannot-promise) · [§ The file](NOTES.md#the-exported-file-is-exactly-the-sequence)
 - **A tutti project is the whole setup** (`src/project.rs`; the owner, 2026-10-21): instrument and
   effects with their states, the sequence as notes, the exact sequence under `dk.mxm.player`. Save's
   *Project* and `saveproject` write it beside the exports, Load and `openproject` open it, `dump`

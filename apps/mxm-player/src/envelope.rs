@@ -243,12 +243,28 @@ pub(crate) struct StaticLayout {
 /// it has exactly one main input and one main output, each mono or stereo, and no auxiliary
 /// inputs — the player has no sidechain to offer. Note ports are read but not required.
 pub fn negotiate_effect(instance: &mut PluginInstance<MxmHost>) -> Result<EffectEnvelope, Refusal> {
+    negotiate_effect_for(instance, None)
+}
+
+/// [`negotiate_effect`] for an effect fed `input_channels`: of the compatible configurations, the
+/// first whose main input is that wide, and the first compatible one when none is.
+///
+/// **Without it a stereo chain went mono.** Every MXM effect offers mono in, stereo out first and
+/// stereo in, stereo out after it, so first-compatible took the mono input whatever fed it, and
+/// the adapter summed the stereo signal into it, at every effect (the owner's drum loops,
+/// 2026-11-18). The width is the chain's to know — the source's, then each effect's output in
+/// turn — so the engine and the offline render pass it; the picker, which has no chain, passes
+/// none.
+pub fn negotiate_effect_for(
+    instance: &mut PluginInstance<MxmHost>,
+    input_channels: Option<u32>,
+) -> Result<EffectEnvelope, Refusal> {
     let shared = instance.plugin_shared_handle();
     let audio_ports: PluginAudioPorts = shared.get_extension().ok_or(Refusal::NoAudioPorts)?;
     let configs: Option<PluginAudioPortsConfig> = shared.get_extension();
 
     let (selected_config, selection) = match configs {
-        Some(configs) => select_effect_configuration(instance, &configs)?,
+        Some(configs) => select_effect_configuration(instance, &configs, input_channels)?,
         None => (
             None,
             "static audio-ports layout (no audio-ports-config)".to_owned(),
@@ -266,11 +282,13 @@ pub fn negotiate_effect(instance: &mut PluginInstance<MxmHost>) -> Result<Effect
     })
 }
 
-/// The first advertised configuration that is one main mono/stereo input and one main
-/// mono/stereo output. First-compatible, as for the source role.
+/// The advertised configuration that is one main mono/stereo input and one main mono/stereo
+/// output: the first whose input is `input_channels` wide, else the first such at all, as for the
+/// source role.
 fn select_effect_configuration(
     instance: &mut PluginInstance<MxmHost>,
     configs: &PluginAudioPortsConfig,
+    input_channels: Option<u32>,
 ) -> Result<(Option<ClapId>, String), Refusal> {
     let mut handle = instance.plugin_handle();
     let count = configs.count(&mut handle);
@@ -300,11 +318,16 @@ fn select_effect_configuration(
                 .is_some_and(|main| matches!(main.channel_count, 1 | 2));
 
         if compatible {
-            let name = String::from_utf8_lossy(config.name).into_owned();
             let ins = config.main_input.map(|m| m.channel_count).unwrap_or(0);
             let outs = config.main_output.map(|m| m.channel_count).unwrap_or(0);
-            chosen = Some((config.id, index, name, ins, outs));
-            break;
+            let fits = input_channels.is_none_or(|wanted| wanted == ins);
+            if chosen.is_none() || fits {
+                let name = String::from_utf8_lossy(config.name).into_owned();
+                chosen = Some((config.id, index, name, ins, outs));
+            }
+            if fits {
+                break;
+            }
         }
     }
 

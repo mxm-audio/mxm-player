@@ -5,13 +5,14 @@
 
 use crate::envelope::{
     AudioLayout, Dialect, EffectEnvelope, Envelope, Refusal, negotiate, negotiate_effect,
-    negotiate_note_port, read_static_layout,
+    negotiate_effect_for, negotiate_note_port, read_static_layout,
 };
 use crate::host::{
     HostAudioProcessor, HostMainThread, HostShared, MxmHost, PlayerHostState, host_info,
 };
 use clack_extensions::audio_ports::PluginAudioPorts;
 use clack_extensions::audio_ports_config::{AudioPortsConfigBuffer, PluginAudioPortsConfig};
+use clack_extensions::latency::PluginLatency;
 use clack_extensions::note_ports::PluginNotePorts;
 use clack_host::events::event_types::{
     MidiEvent, NoteOffEvent, NoteOnEvent, ParamModEvent, ParamValueEvent,
@@ -232,7 +233,22 @@ pub fn render(
     config: RenderConfig,
     events: &[ScheduledEvent],
 ) -> Result<RenderResult, RenderError> {
-    render_inner(bundle, plugin_id, config, events, None, None)
+    render_inner(bundle, plugin_id, config, events, None, None, false)
+}
+
+/// [`render`], with the plugin's reported latency taken back out, as an export wants it: the
+/// plugin runs that many frames past the end and the first that many are dropped, so frame zero
+/// is the sound of frame zero's events and the render is still `total_frames` long.
+///
+/// A separate entry rather than a change to [`render`], which every host test and golden render
+/// goes through and whose samples must not move.
+pub fn render_aligned(
+    bundle: &Path,
+    plugin_id: &str,
+    config: RenderConfig,
+    events: &[ScheduledEvent],
+) -> Result<RenderResult, RenderError> {
+    render_inner(bundle, plugin_id, config, events, None, None, true)
 }
 
 /// Renders one advertised source configuration by index, optionally feeding its mono auxiliary
@@ -253,6 +269,7 @@ pub fn render_configuration(
         events,
         Some(configuration_index),
         auxiliary_input,
+        false,
     )
 }
 
@@ -263,6 +280,7 @@ fn render_inner(
     events: &[ScheduledEvent],
     configuration_index: Option<u32>,
     auxiliary_input: Option<&[f32]>,
+    compensate_latency: bool,
 ) -> Result<RenderResult, RenderError> {
     // SAFETY: loading a CLAP bundle runs arbitrary code from the file. That is inherent to
     // hosting; the caller decides which bundles are trustworthy. Fixtures are loaded by path,
@@ -299,9 +317,16 @@ fn render_inner(
         max_frames_count: config.block_size,
     };
     let processor = instance.activate(|shared, _| HostAudioProcessor::new(shared), audio_config)?;
+    let latency = if compensate_latency {
+        u64::from(reported_latency(&mut instance))
+    } else {
+        0
+    };
+    // What the plugin runs for: the render, then as much again as it holds back.
+    let run_frames = config.total_frames + latency;
 
     let mut output_channels: Vec<Vec<f32>> =
-        vec![Vec::with_capacity(config.total_frames as usize); channel_count];
+        vec![Vec::with_capacity(run_frames as usize); channel_count];
     let mut statuses = Vec::new();
 
     {
@@ -319,8 +344,8 @@ fn render_inner(
         let mut output_event_count = 0u64;
 
         let mut frame = 0u64;
-        while frame < config.total_frames {
-            let block_frames = config.block_size.min((config.total_frames - frame) as u32);
+        while frame < run_frames {
+            let block_frames = config.block_size.min((run_frames - frame) as u32);
 
             input_events.clear();
             for event in events
@@ -338,9 +363,11 @@ fn render_inner(
 
             let input_audio = if auxiliary_ports == 1 {
                 if let Some(source) = auxiliary_input {
-                    let from = frame as usize;
-                    input_block[..block_frames as usize]
-                        .copy_from_slice(&source[from..from + block_frames as usize]);
+                    // Silence past the render's end, where only a latency's worth runs on.
+                    let from = (frame as usize).min(source.len());
+                    let have = (block_frames as usize).min(source.len() - from);
+                    input_block[..have].copy_from_slice(&source[from..from + have]);
+                    input_block[have..block_frames as usize].fill(0.0);
                 } else {
                     input_block[..block_frames as usize].fill(0.0);
                 }
@@ -387,6 +414,9 @@ fn render_inner(
 
         let processor = processor.stop_processing();
         instance.deactivate(processor);
+        for channel in &mut output_channels {
+            channel.drain(..latency as usize);
+        }
 
         Ok(RenderResult {
             channels: output_channels,
@@ -479,6 +509,12 @@ fn select_source_configuration(
 /// room did. The render is **not lengthened**: an effect's tail past the end is the sequence's
 /// business, as `sequencer::export` says, and an empty bar at the end is how one is asked for.
 /// `tempo` is [`RenderConfig::tempo`]'s, for the effects: an export passes the same one to both.
+///
+/// **Each effect takes the layout for the width it is fed** ([`negotiate_effect_for`]), as the
+/// live chain does, and **its reported latency is taken back out**: it runs that many frames of
+/// silence past the end and its first that many are dropped, so an export lines up with its
+/// sequence's grid. Without it, oldify's 41.6 ms put every export behind the beat and cut its
+/// last 41.6 ms (the owner's drum loops, 2026-11-18).
 pub fn through_effects(
     mut result: RenderResult,
     effects: &[EffectSpec],
@@ -508,7 +544,8 @@ fn run_effect(
         restore(&mut instance, bytes)?;
     }
 
-    let envelope = negotiate_effect(&mut instance).map_err(RenderError::Refused)?;
+    let envelope = negotiate_effect_for(&mut instance, Some(source.len() as u32))
+        .map_err(RenderError::Refused)?;
     let input_channels = envelope.input.channel_count as usize;
     let output_channels = envelope.output.channel_count as usize;
     let frames = source.first().map(Vec::len).unwrap_or(0);
@@ -521,8 +558,11 @@ fn run_effect(
             max_frames_count: block_size,
         },
     )?;
+    let latency = reported_latency(&mut instance) as usize;
+    // What the effect runs for: the source, then as much silence again as it holds back.
+    let run_frames = frames + latency;
 
-    let mut output: Vec<Vec<f32>> = vec![Vec::with_capacity(frames); output_channels];
+    let mut output: Vec<Vec<f32>> = vec![Vec::with_capacity(run_frames); output_channels];
     {
         let mut processor = processor
             .start_processing()
@@ -542,9 +582,13 @@ fn run_effect(
         let mut next_event = 0usize;
 
         let mut frame = 0usize;
-        while frame < frames {
-            let n = block.min(frames - frame);
-            adapt_channels(source, &mut input_block, frame, n);
+        while frame < run_frames {
+            let n = block.min(run_frames - frame);
+            let have = n.min(frames.saturating_sub(frame));
+            adapt_channels(source, &mut input_block, frame.min(frames), have);
+            for buffer in &mut input_block {
+                buffer[have..n].fill(0.0);
+            }
             for buffer in &mut output_block {
                 buffer[..n].fill(0.0);
             }
@@ -597,7 +641,20 @@ fn run_effect(
         let processor = processor.stop_processing();
         instance.deactivate(processor);
     }
+    for channel in &mut output {
+        channel.drain(..latency);
+    }
     Ok(output)
+}
+
+/// The latency a plugin reports, read once it is active — CLAP's rule for when it is valid — or
+/// zero when it implements no `latency` extension.
+fn reported_latency(instance: &mut PluginInstance<MxmHost>) -> u32 {
+    let Some(ext): Option<PluginLatency> = instance.plugin_shared_handle().get_extension() else {
+        return 0;
+    };
+    let mut handle = instance.plugin_handle();
+    ext.get(&mut handle)
 }
 
 /// Copies `n` frames of `source` from `from` into `input`, adapting the channel count as the

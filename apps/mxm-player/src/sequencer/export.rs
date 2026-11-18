@@ -354,7 +354,9 @@ pub fn render_offline(
     events.sort_by_key(|event| event.frame);
 
     const BLOCK: u32 = 512;
-    let result = crate::offline::render(
+    // Aligned: a source's reported latency is taken back out, as each effect's is in the chain,
+    // so the file starts on the sequence's first beat.
+    let result = crate::offline::render_aligned(
         bundle,
         plugin_id,
         RenderConfig {

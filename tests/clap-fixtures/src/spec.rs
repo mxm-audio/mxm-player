@@ -68,6 +68,9 @@ pub struct FixtureSpec {
     pub note_input: Option<NoteDialectDecl>,
     pub note_output: Option<NoteDialectDecl>,
     pub behaviour: Behaviour,
+    /// What the fixture reports through the `latency` extension, in frames, and delays its output
+    /// by: zero for every fixture but `effect-latency`, which implements the extension only then.
+    pub latency: u32,
 }
 
 /// One `audio-ports-config` entry.
@@ -77,7 +80,18 @@ pub struct ConfigDecl {
     pub name: &'static str,
     pub input_port_count: u32,
     pub output_port_count: u32,
+    pub main_input_channels: Option<u32>,
     pub main_output_channels: Option<u32>,
+    /// The ports the fixture reports once this configuration is selected, or `None` for one no
+    /// correct host selects, which leaves the static ports as they are.
+    pub layout: Option<PortLayout>,
+}
+
+/// The audio ports a selected configuration switches a fixture to.
+#[derive(Copy, Clone, Debug)]
+pub struct PortLayout {
+    pub inputs: &'static [PortDecl],
+    pub outputs: &'static [PortDecl],
 }
 
 /// A note port's advertised dialects. Kept separate from `NoteDialects` so the table stays
@@ -168,6 +182,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: Some(NoteDialectDecl::ClapAndMidi),
         note_output: None,
         behaviour: Behaviour::Silent,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.two-outputs",
@@ -190,6 +205,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: Some(NoteDialectDecl::ClapAndMidi),
         note_output: None,
         behaviour: Behaviour::Silent,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.surround",
@@ -205,6 +221,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: Some(NoteDialectDecl::ClapAndMidi),
         note_output: None,
         behaviour: Behaviour::Silent,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.no-config",
@@ -229,19 +246,24 @@ pub const FIXTURES: &[FixtureSpec] = &[
                 name: "6.0 with sidechain",
                 input_port_count: 1,
                 output_port_count: 2,
+                main_input_channels: None,
                 main_output_channels: Some(6),
+                layout: None,
             },
             ConfigDecl {
                 id: 1,
                 name: "Quad",
                 input_port_count: 1,
                 output_port_count: 1,
+                main_input_channels: None,
                 main_output_channels: Some(4),
+                layout: None,
             },
         ]),
         note_input: Some(NoteDialectDecl::ClapAndMidi),
         note_output: None,
         behaviour: Behaviour::Silent,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.non-main-output",
@@ -257,6 +279,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: Some(NoteDialectDecl::ClapAndMidi),
         note_output: None,
         behaviour: Behaviour::Silent,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.event-emitter",
@@ -268,6 +291,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: Some(NoteDialectDecl::ClapAndMidi),
         note_output: Some(NoteDialectDecl::ClapAndMidi),
         behaviour: Behaviour::EventEmitter,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.cpu-load",
@@ -279,6 +303,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: Some(NoteDialectDecl::ClapAndMidi),
         note_output: None,
         behaviour: Behaviour::CpuLoad,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.hang",
@@ -290,6 +315,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: Some(NoteDialectDecl::ClapAndMidi),
         note_output: None,
         behaviour: Behaviour::Hang,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.log-spam",
@@ -301,6 +327,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: Some(NoteDialectDecl::ClapAndMidi),
         note_output: None,
         behaviour: Behaviour::LogSpam,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.tail-shift",
@@ -312,6 +339,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: Some(NoteDialectDecl::ClapAndMidi),
         note_output: None,
         behaviour: Behaviour::TailShift,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.main-thread",
@@ -323,6 +351,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: Some(NoteDialectDecl::ClapAndMidi),
         note_output: None,
         behaviour: Behaviour::MainThreadCallback,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.clap-only-notes",
@@ -334,6 +363,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: Some(NoteDialectDecl::ClapOnly),
         note_output: None,
         behaviour: Behaviour::VoiceCounter,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.effect",
@@ -345,6 +375,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: None,
         note_output: None,
         behaviour: Behaviour::Effect,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.transport-probe",
@@ -356,6 +387,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: None,
         note_output: None,
         behaviour: Behaviour::TransportProbe,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.effect-main-thread",
@@ -367,6 +399,7 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: None,
         note_output: None,
         behaviour: Behaviour::MainThreadCallback,
+        latency: 0,
     },
     FixtureSpec {
         id: "dk.mxm.fixture.effect-mono",
@@ -378,6 +411,56 @@ pub const FIXTURES: &[FixtureSpec] = &[
         note_input: None,
         note_output: None,
         behaviour: Behaviour::Effect,
+        latency: 0,
+    },
+    FixtureSpec {
+        id: "dk.mxm.fixture.effect-layouts",
+        name: "MXM Fixture: effect (mono or stereo in)",
+        description: "The conforming effect offering mono in, stereo out first and stereo in, stereo out second, as the MXM effects do, so a host's choice of layout for what feeds it is tested",
+        audio_inputs: MONO_MAIN_IN,
+        audio_outputs: STEREO_MAIN_OUT,
+        configs: Some(&[
+            ConfigDecl {
+                id: 0,
+                name: "Mono in",
+                input_port_count: 1,
+                output_port_count: 1,
+                main_input_channels: Some(1),
+                main_output_channels: Some(2),
+                layout: Some(PortLayout {
+                    inputs: MONO_MAIN_IN,
+                    outputs: STEREO_MAIN_OUT,
+                }),
+            },
+            ConfigDecl {
+                id: 1,
+                name: "Stereo",
+                input_port_count: 1,
+                output_port_count: 1,
+                main_input_channels: Some(2),
+                main_output_channels: Some(2),
+                layout: Some(PortLayout {
+                    inputs: STEREO_MAIN_IN,
+                    outputs: STEREO_MAIN_OUT,
+                }),
+            },
+        ]),
+        note_input: None,
+        note_output: None,
+        behaviour: Behaviour::Effect,
+        latency: 0,
+    },
+    FixtureSpec {
+        id: "dk.mxm.fixture.effect-latency",
+        name: "MXM Fixture: effect with latency",
+        description: "The conforming effect, stereo, its output delayed by the latency it reports, so a host's latency compensation is tested",
+        audio_inputs: STEREO_MAIN_IN,
+        audio_outputs: STEREO_MAIN_OUT,
+        configs: None,
+        note_input: None,
+        note_output: None,
+        behaviour: Behaviour::Effect,
+        latency: crate::fixture::EFFECT_LATENCY_FRAMES,
     },
 ];
 

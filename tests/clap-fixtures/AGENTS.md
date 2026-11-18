@@ -52,10 +52,15 @@ process; its test spawns a subprocess. Any similarly terminal fixture needs the 
 
 ## The reference effect is the one fixture that transforms audio
 
-`Behaviour::Effect` backs two rows — `dk.mxm.fixture.effect` (stereo in, stereo out) and
+`Behaviour::Effect` backs four rows — `dk.mxm.fixture.effect` (stereo in, stereo out) and
 `dk.mxm.fixture.effect-mono` (mono in, mono out), so the player's channel adapter is tested in
-both directions. Both declare an in-place pair on their ports, which is what makes a host
-(clap-validator included) share a buffer at all. The player loads them by path like every fixture.
+both directions; `dk.mxm.fixture.effect-layouts`, offering mono in, stereo out first and stereo in,
+stereo out second as the MXM effects do, its ports following the configuration selected
+(`ConfigDecl::layout`), so the player's choice of layout for what feeds an effect is tested; and
+`dk.mxm.fixture.effect-latency` (stereo), which reports `EFFECT_LATENCY_FRAMES` through `latency`
+and holds its input back that long before the echo, so an export's compensation is tested. Each
+declares an in-place pair on its ports, which is what makes a host (clap-validator included) share
+a buffer at all. The player loads them by path like every fixture.
 
 Its contract is the arithmetic, held in `fixture.rs` and exported as constants: per channel,
 `out = Amount * in + 0.5 * delayed`, where `delayed` is what the line held exactly 480 frames ago
@@ -82,8 +87,8 @@ without opening an editor. It is staged only with the other fixtures, never in p
 ## Extension features are minimal and attributed
 
 `clack-extensions` features are enabled only as some fixture needs them, with a comment naming which
-one — `log` for `log-spam`, `tail` for `tail-shift` and `effect`. Keep that attribution when adding
-a feature.
+one — `log` for `log-spam`, `tail` for `tail-shift` and `effect`, `latency` for `effect-latency`.
+Keep that attribution when adding a feature.
 
 ## MSRV
 
