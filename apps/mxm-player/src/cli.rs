@@ -67,6 +67,13 @@ pub fn start(settings_path: &Path) -> Result<mpsc::Receiver<Request>, String> {
         .port();
 
     let file = port_file(settings_path);
+    // On a computer the player has never run on, the settings' folder isn't there yet when the
+    // listener starts: the write failed and `mxm-cli` found no player (the Windows and Linux test
+    // VMs, 2026-11-17 and 2026-11-18).
+    if let Some(folder) = file.parent() {
+        std::fs::create_dir_all(folder)
+            .map_err(|e| format!("could not make {}: {e}", folder.display()))?;
+    }
     std::fs::write(
         &file,
         format!("{{\"port\": {port}, \"pid\": {}}}\n", std::process::id()),
@@ -140,4 +147,20 @@ pub fn run_command(settings_path: &Path, command: &str) -> Result<String, String
     let mut answer = String::new();
     reader.read_line(&mut answer).map_err(|e| e.to_string())?;
     Ok(answer.trim_end().to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_port_is_published_where_the_settings_folder_is_not_made_yet() {
+        let root = std::env::temp_dir().join(format!("mxm-cli-fresh-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let settings = root.join("mxm-player").join("settings.json");
+        let _listener = start(&settings).expect("the listener starts on a fresh computer");
+        let published = std::fs::read_to_string(port_file(&settings)).unwrap();
+        assert!(published.contains("\"port\""));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
