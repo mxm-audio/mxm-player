@@ -49,6 +49,20 @@ impl MidiPorts {
     }
 }
 
+/// `MXM_PLAYER_SEARCH`: the plugin folders the shipped player searches, and only those, the
+/// standard ones and `CLAP_PATH` left out; several are separated as `PATH` is. For a run that tests
+/// one set of plugins on a machine with others installed: newdawn-workspace's platform check, on the
+/// owner's Mac, scanned every plugin there and ran their code (2026-11-18).
+pub const SEARCH_ENV: &str = "MXM_PLAYER_SEARCH";
+
+/// The folders [`SEARCH_ENV`] names, or `None` when it isn't set or names none.
+pub fn search_override(value: Option<std::ffi::OsString>) -> Option<Vec<PathBuf>> {
+    let folders: Vec<PathBuf> = std::env::split_paths(&value?)
+        .filter(|path| !path.as_os_str().is_empty())
+        .collect();
+    (!folders.is_empty()).then_some(folders)
+}
+
 /// Everything a `PlayerApp` needs from its environment.
 pub struct PlayerConfig {
     pub backend: Box<dyn Backend>,
@@ -76,7 +90,8 @@ pub struct PlayerConfig {
 }
 
 impl PlayerConfig {
-    /// What the shipped binary runs: a real device, the user's settings, the whole machine.
+    /// What the shipped binary runs: a real device, the user's settings, the whole machine, but
+    /// for the plugin folders [`SEARCH_ENV`] names when it is set.
     pub fn production() -> Self {
         Self {
             backend: Box::new(CpalBackend::new()),
@@ -86,7 +101,7 @@ impl PlayerConfig {
             control_map_path: crate::control_map::default_user_path(),
             sequence_dir: crate::sequencer::sequence::default_dir(),
             exports_dir: crate::sequencer::export::default_dir(),
-            search_paths: None,
+            search_paths: search_override(std::env::var_os(SEARCH_ENV)),
             clock: Clock::monotonic(),
             midi_ports: MidiPorts::Live,
         }
@@ -140,6 +155,21 @@ impl PlayerConfig {
 mod tests {
     use super::*;
     use crate::engine::audio::FakeBackend;
+
+    #[test]
+    fn the_search_override_names_exactly_its_folders() {
+        assert_eq!(search_override(None), None);
+        assert_eq!(
+            search_override(Some("".into())),
+            None,
+            "set but empty searches as usual"
+        );
+        let joined = std::env::join_paths(["/a/plugins", "/b"]).expect("two paths");
+        assert_eq!(
+            search_override(Some(joined)),
+            Some(vec![PathBuf::from("/a/plugins"), PathBuf::from("/b")])
+        );
+    }
 
     #[test]
     fn a_sandboxed_config_stays_inside_its_directory() {

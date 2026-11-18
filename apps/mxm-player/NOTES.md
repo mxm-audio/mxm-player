@@ -1607,6 +1607,9 @@ files, then do that"). It needed two verbs, and its first runs found two faults:
   runs the load itself once the pin carries `preset-load`; the platform check loads one on every
   plugin.
 - **`loadseq <file>`**: the same `.mid` files fed to every plugin, from wherever they were put.
+- **`MXM_PLAYER_SEARCH`**: the plugin folders the shipped player searches, and only those. `CLAP_PATH`
+  adds to the standard folders, so on the owner's Mac the check's player scanned every plugin
+  installed there (u-he's and AAS's among them) and ran their code.
 - **No audio on a fresh Ubuntu 24.04.** cpal names ALSA's default device "Default Audio Device" and
   lists no device by that name, so the name `devices` put first was the one name `resolve` couldn't
   find, and the player opened no audio at all. The default is now matched by its name first.

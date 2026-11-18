@@ -62,7 +62,9 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
   grows; `MergedInput::sort_by_arrival` stays `sort_unstable_by_key` with a `sequence` tie-break, never a
   stable sort; allocation tests include a dense buffer. [NOTES.md § Allocation](NOTES.md#the-audio-callback-allocates-nothing)
 - **`Clock` is a closed enum**, every read wait-free. A test never runs `PlayerConfig::production()`: use
-  `PlayerConfig::sandboxed`, with explicit search paths. [NOTES.md § Clock](NOTES.md#one-clock-and-it-is-read-on-the-audio-thread) · [§ Config](NOTES.md#the-app-is-configured-never-hard-wired)
+  `PlayerConfig::sandboxed`, with explicit search paths. The shipped player searches only the folders
+  `MXM_PLAYER_SEARCH` names when it is set (`config::SEARCH_ENV`), for a run testing one set of plugins
+  on a machine with others installed. [NOTES.md § Clock](NOTES.md#one-clock-and-it-is-read-on-the-audio-thread) · [§ Config](NOTES.md#the-app-is-configured-never-hard-wired)
 - **`PlayerApp::service` is the one servicing implementation**, window and headless; never a second copy.
   The session backend services commands whenever not rendering and never drains input queues there.
   [NOTES.md § Servicing](NOTES.md#servicing-is-one-implementation-called-from-two-places) · [§ Advancement](NOTES.md#audio-advancement-and-command-servicing-are-separate)
