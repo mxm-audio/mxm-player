@@ -550,3 +550,146 @@ fn savemid_writes_a_midi_file_that_reads_back() {
     assert_eq!(&bytes[..4], b"MThd", "a real SMF header");
     assert!(bytes.len() > 30, "with music in it");
 }
+
+/// The text the loaded plugin's parameter `name` shows, from the dump.
+fn param_text(app: &mut mxm_player::ui::PlayerApp, settings: &Path, name: &str) -> String {
+    dump(app, settings)["state"]["plugin"]["params"]
+        .as_array()
+        .and_then(|params| params.iter().find(|p| p["name"] == name))
+        .and_then(|p| p["text"].as_str())
+        .unwrap_or_default()
+        .to_owned()
+}
+
+#[test]
+fn a_preset_file_loads_through_the_plugins_own_loader() {
+    // The collection's platform check (newdawn-workspace's `collection-tests`) plays factory
+    // presets by their files: through the plugin's `preset-load`, as a DAW's browser loads one.
+    let Some((mut app, settings)) = player_with_cli("preset") else {
+        eprintln!("skipped: run `cargo xtask bundle mxm-mono-01` first");
+        return;
+    };
+    let folder = settings
+        .parent()
+        .expect("the sandbox")
+        .join("presets with spaces");
+    std::fs::create_dir_all(&folder).expect("a preset folder");
+    let preset = |cutoff: f32| {
+        format!(
+            r#"{{"schema_version": 1, "plugin": "{PLUGIN}", "name": "Proof", "category": "lead",
+                "params": {{"cutoff": {{"v": {cutoff}, "text": ""}}}}}}"#
+        )
+    };
+    let bright = folder.join("bright.json");
+    std::fs::write(&bright, preset(0.9)).expect("a preset file");
+    let before = param_text(&mut app, &settings, "Cutoff");
+
+    let answer = command(&mut app, &settings, &format!("preset {}", bright.display()));
+    // **The pinned reference instrument predates preset-load** (`test-bundles.txt`: mxm-mono-01
+    // v0.1.1, 2026-10-06; its presets became files a host loads on 2026-10-27), and the fetch takes
+    // tags only. So against it this proves the host's refusal, with its reason; the loads below
+    // run once the pin carries preset-load, and the platform check runs them on every plugin.
+    if answer.contains("no CLAP preset-load") {
+        eprintln!(
+            "skipped the load itself: the pinned {PLUGIN} has no preset-load; refused: {answer}"
+        );
+        return;
+    }
+    assert!(answer.contains("ok"), "a preset over the CLI: {answer}");
+    let mut loaded = String::new();
+    assert!(
+        service_until(
+            &mut app,
+            &settings,
+            std::time::Duration::from_secs(5),
+            |d| {
+                loaded = d["state"]["plugin"]["params"]
+                    .as_array()
+                    .and_then(|params| params.iter().find(|p| p["name"] == "Cutoff"))
+                    .and_then(|p| p["text"].as_str())
+                    .unwrap_or_default()
+                    .to_owned();
+                loaded != before
+            }
+        ),
+        "the panel follows the plugin's own edits: still {before}"
+    );
+
+    // Moved away and loaded again, it lands where it did: the file set it, not a drift.
+    assert!(command(&mut app, &settings, "set cutoff 0.1").contains("ok"));
+    assert!(command(&mut app, &settings, &format!("preset {}", bright.display())).contains("ok"));
+    assert!(
+        service_until(
+            &mut app,
+            &settings,
+            std::time::Duration::from_secs(5),
+            |d| {
+                d["state"]["plugin"]["params"]
+                    .as_array()
+                    .and_then(|params| params.iter().find(|p| p["name"] == "Cutoff"))
+                    .is_some_and(|p| p["text"] == loaded.as_str())
+            }
+        ),
+        "the second load set {loaded} again"
+    );
+
+    // Another plugin's file, and no file at all, are refused with the plugin's reason.
+    let foreign = folder.join("foreign.json");
+    std::fs::write(&foreign, preset(0.5).replace(PLUGIN, "dk.mxm.mxm-mono-02")).expect("a file");
+    let refused = command(
+        &mut app,
+        &settings,
+        &format!("preset {}", foreign.display()),
+    );
+    assert!(
+        refused.contains("error") && refused.contains("mxm-mono-02"),
+        "the plugin says whose file it is: {refused}"
+    );
+    let missing = command(
+        &mut app,
+        &settings,
+        &format!("preset {}", folder.join("none.json").display()),
+    );
+    assert!(
+        missing.contains("error") && missing.contains("none.json"),
+        "a missing file is named: {missing}"
+    );
+}
+
+#[test]
+fn loadseq_reads_a_midi_file_by_its_path() {
+    // The platform check feeds every plugin the same `.mid` files, from wherever they were put.
+    let Some((mut app, settings)) = player_with_cli("loadseq-path") else {
+        eprintln!("skipped: run `cargo xtask bundle mxm-mono-01` first");
+        return;
+    };
+    assert!(command(&mut app, &settings, "toggle 1 C3").contains("ok"));
+    assert!(command(&mut app, &settings, "toggle 5 E3").contains("ok"));
+    // 100 BPM, which SMF's microseconds per quarter hold exactly.
+    assert!(command(&mut app, &settings, "tempo 100").contains("ok"));
+    let answer = command(&mut app, &settings, "savemid path-proof");
+    let saved = answer
+        .split("saved ")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .map(|s| s.replace("\\\\", "\\"))
+        .expect("the answer names the file");
+    // Moved out of the exports folder, under a name with a space, so only the path can find it.
+    let moved = settings.parent().expect("the sandbox").join("a line.mid");
+    std::fs::rename(saved.trim(), &moved).expect("the file moved");
+
+    assert!(command(&mut app, &settings, "clear").contains("ok"));
+    assert!(command(&mut app, &settings, "tempo 120").contains("ok"));
+    let loaded = command(&mut app, &settings, &format!("loadseq {}", moved.display()));
+    assert!(loaded.contains("ok"), "loadseq by path: {loaded}");
+    let sequencer = &dump(&mut app, &settings)["state"]["sequencer"];
+    assert_eq!(sequencer["steps"][0][0], "C3", "{sequencer}");
+    assert_eq!(sequencer["steps"][4][0], "E3", "{sequencer}");
+    assert_eq!(sequencer["tempo"], 100.0, "the file's tempo");
+
+    let missing = command(&mut app, &settings, "loadseq /nowhere/at-all.mid");
+    assert!(
+        missing.contains("error"),
+        "a missing file says so: {missing}"
+    );
+}

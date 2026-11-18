@@ -27,6 +27,9 @@ clack-extensions = { version = "=0.1.1", default-features = false, features = [
     "params", "state", "latency", "tail", "log",
     # `gui`: the player shows a plugin's own interface in a floating window it owns.
     "gui",
+    # `preset-discovery`: its preset-load half, a preset file loaded through the plugin's own
+    # loader (`preset <file>`), as a DAW's browser loads one.
+    "preset-discovery",
 ] }
 
 cpal   = { version = "=0.18.2", features = ["realtime"] }

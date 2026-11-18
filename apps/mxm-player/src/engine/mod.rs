@@ -740,6 +740,58 @@ impl Engine {
         Ok(())
     }
 
+    /// Loads a preset file into the source through the plugin's own loader, CLAP's `preset-load`,
+    /// as a DAW's preset browser loads one. The player reads nothing of the file: what it sets
+    /// arrives as the plugin's own edits, exactly as when a person picks it in the plugin's
+    /// browser, so the panel follows on the next frames.
+    pub fn load_preset(&mut self, path: &Path) -> Result<(), String> {
+        let loaded = self
+            .loaded
+            .as_mut()
+            .ok_or_else(|| "no plugin is loaded".to_owned())?;
+        Self::load_preset_into(&mut loaded.instance, &self.shared, path)
+    }
+
+    /// [`Engine::load_preset`] for one effect.
+    pub fn load_fx_preset(&mut self, index: usize, path: &Path) -> Result<(), String> {
+        let slot = self
+            .fx
+            .get_mut(index)
+            .ok_or_else(|| format!("there is no effect {}", index + 1))?;
+        Self::load_preset_into(&mut slot.instance, &slot.shared, path)
+    }
+
+    /// The one `preset-load` call, with the plugin's reason when it refuses the file.
+    fn load_preset_into(
+        instance: &mut PluginInstance<MxmHost>,
+        shared: &PlayerHostState,
+        path: &Path,
+    ) -> Result<(), String> {
+        use clack_extensions::preset_discovery::PluginPresetLoad;
+        use clack_extensions::preset_discovery::preset_data::Location;
+
+        let ext: PluginPresetLoad = instance
+            .plugin_shared_handle()
+            .get_extension()
+            .ok_or_else(|| "this plugin loads no preset files (no CLAP preset-load)".to_owned())?;
+        // A plugin resolves the path itself, from its own working folder: give it a whole one.
+        let path = std::path::absolute(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let text = path
+            .to_str()
+            .ok_or_else(|| format!("{}: the path isn't UTF-8", path.display()))?;
+        let location =
+            std::ffi::CString::new(text).map_err(|_| format!("{text}: the path holds a nul"))?;
+        // Nothing left over from an earlier refusal may stand in for this one's reason.
+        let _ = shared.take_preset_refusal();
+        let mut handle = instance.plugin_handle();
+        ext.load_from_location(&mut handle, Location::File { path: &location }, None)
+            .map_err(|_| {
+                shared
+                    .take_preset_refusal()
+                    .unwrap_or_else(|| format!("the plugin refused {text} and gave no reason"))
+            })
+    }
+
     /// Activates every effect and builds its stage, after the source has been activated.
     ///
     /// On any failure the stages already built are dropped — each owner's `Drop` hands its
@@ -1066,6 +1118,8 @@ impl Engine {
             loaded.instance.call_on_main_thread_callback();
         }
 
+        self.flush_source_params_while_inactive();
+
         let mut reconfigure = self.shared.requests.restart.swap(false, Ordering::AcqRel)
             | self
                 .shared
@@ -1087,6 +1141,41 @@ impl Engine {
         if reconfigure && self.stream.is_some() {
             self.request_reconfigure();
         }
+    }
+
+    /// The instrument's [`FxSlot::flush_params_while_inactive`]. With no stream there's no
+    /// processor to take a `request_flush`, so a preset loaded through `preset-load`, or an edit in
+    /// the instrument's own editor, never reached the plugin, and an export saved the state from
+    /// before it (the platform check, 2026-11-18, in a VM where no audio device opened). CLAP makes
+    /// `params.flush` a main-thread call on an inactive plugin for exactly this; the panel
+    /// requeries after it. An active instrument is left alone: its processor takes the request.
+    fn flush_source_params_while_inactive(&mut self) {
+        let Some(loaded) = self.loaded.as_mut() else {
+            return;
+        };
+        let params: Option<clack_extensions::params::PluginParams> =
+            loaded.instance.plugin_shared_handle().get_extension();
+        let Some(mut handle) = loaded.instance.inactive_plugin_handle() else {
+            return;
+        };
+        if !self
+            .shared
+            .requests
+            .param_flush
+            .swap(false, Ordering::AcqRel)
+        {
+            return;
+        }
+        let Some(params) = params else {
+            return;
+        };
+        let mut echo = EventBuffer::new();
+        params.flush(
+            &mut handle,
+            &InputEvents::empty(),
+            &mut OutputEvents::from_buffer(&mut echo),
+        );
+        self.shared.note_unsettled_params();
     }
 
     /// Whether a plugin process request is waiting for the audio thread. Observational only: tests
@@ -1730,6 +1819,40 @@ mod tests {
             "nothing was running, so the effect never took its own editor's edit"
         );
         assert!(!engine.fx[0].instance.is_active(), "a flush is not a start");
+    }
+
+    /// **The instrument takes its own edits with nothing running**, as an effect does: a preset
+    /// loaded through `preset-load`, or its editor, queues values and asks for a flush.
+    #[test]
+    fn an_instrument_with_nothing_running_takes_its_own_edits() {
+        let bundle = crate::staged_for_tests("fixtures/mxm-fixtures.clap");
+        if !bundle.exists() {
+            eprintln!("skipping: run `cargo xtask fixtures --release` to stage the fixtures");
+            return;
+        }
+        let mut engine = Engine::new();
+        engine.load(&bundle, "dk.mxm.fixture.main-thread").unwrap();
+        assert!(!engine.loaded.as_mut().unwrap().instance.is_active());
+
+        engine
+            .shared
+            .requests
+            .param_flush
+            .store(true, Ordering::Release);
+        engine.poll();
+
+        assert!(
+            !engine.shared.requests.param_flush.load(Ordering::Acquire),
+            "nothing was running, so the instrument never took its own edit"
+        );
+        assert!(
+            engine.shared.take_unsettled_params(),
+            "the panel is told to read the values again"
+        );
+        assert!(
+            !engine.loaded.as_mut().unwrap().instance.is_active(),
+            "a flush is not a start"
+        );
     }
 
     #[test]

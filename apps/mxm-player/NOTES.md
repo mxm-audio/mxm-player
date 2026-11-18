@@ -1593,6 +1593,28 @@ and coming to rest is when somebody stops to look at what they made.
 
 ## The CLI
 
+### What the platform check needs, and found
+
+newdawn-workspace's `collection-tests/platform-check` plays every plugin of the collection in this
+player on Linux, Windows and macOS, from the release archives, through `mxm-cli` (the owner,
+2026-11-18: "If you need to make changes to the player to be able to ffed it the sequences/midi
+files, then do that"). It needed two verbs, and its first runs found two faults:
+
+- **`preset <file>`, `fx preset <n> <file>`**: a factory preset loaded the way a DAW loads one, through
+  the plugin's CLAP `preset-load` and its own loader, so the test runs the plugin's code and not a copy
+  of the format in the host. The reference instrument the tests fetch (mxm-mono-01 v0.1.1) predates
+  `preset-load`, and `test-bundles.txt` takes tags only, so `t9` proves the refusal against it and
+  runs the load itself once the pin carries `preset-load`; the platform check loads one on every
+  plugin.
+- **`loadseq <file>`**: the same `.mid` files fed to every plugin, from wherever they were put.
+- **No audio on a fresh Ubuntu 24.04.** cpal names ALSA's default device "Default Audio Device" and
+  lists no device by that name, so the name `devices` put first was the one name `resolve` couldn't
+  find, and the player opened no audio at all. The default is now matched by its name first.
+- **An instrument with nothing running never took its own edits.** A preset (or the plugin's own
+  editor) queues values and asks the host for a flush; with no stream there was no processor to take
+  it, so the values never reached the plugin and an export saved the patch from before. Effects had
+  had their main-thread flush since 2026-09-30; the instrument has the same now.
+
 ### The CLI: everything a person can do has a verb, and that is a contract
 
 **The CLI ships.** It is part of the product, not scaffolding behind a development flag: a person

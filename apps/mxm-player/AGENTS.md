@@ -47,7 +47,7 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
   after the source and deactivate before it on every path. **Off is uncalled**: input passes to the bit;
   back on is CLAP `reset` first; edits still arrive through `params.flush` (`FxStage::flush_params`, or
   `FxSlot::flush_params_while_inactive` with no stream). A tail countdown restarts on every chunk carrying
-  input; an erroring stage bypasses itself for good. Verbs `fx add|remove|move|on|off|editor`, one-based;
+  input; an erroring stage bypasses itself for good. Verbs `fx add|remove|move|on|off|editor|preset`, one-based;
   `fx_chain` is restored before any source loads. [NOTES.md § Effect chain](NOTES.md#the-effect-chain-serial-reorderable-and-off-means-uncalled)
 - **Effect locks keep identity**: `LockKey` is plugin + parameter; `FxId` is never reused; removal deletes
   an effect's locks before publishing; a missing live effect is a save error, never Source. Authoring goes
@@ -74,7 +74,10 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
   polling; a Stop that did not fit is retried, never `Ok`. [NOTES.md § Wedged](NOTES.md#a-wedged-engine-never-reports-a-clean-stop)
 - **A dead stream is neither wedged nor stopped**: errors go through `audio::describe`; `Engine::try_reconnect`
   runs each frame from `service` and never gives up; a reconnect republishes the CC mask and sequencer
-  state; Play refuses while dead or wedged; a start failing after activation deactivates. [NOTES.md § Dead stream](NOTES.md#a-dead-stream-is-not-a-wedged-plugin)
+  state; Play refuses while dead or wedged; a start failing after activation deactivates. With no stream
+  the instrument takes its own edits as an effect does, `params.flush` on the main thread
+  (`Engine::flush_source_params_while_inactive`). A device is found by its name, the default's first
+  (`CpalBackend::resolve`): ALSA's default isn't in ALSA's own list. [NOTES.md § Dead stream](NOTES.md#a-dead-stream-is-not-a-wedged-plugin) · [§ Platform check](NOTES.md#what-the-platform-check-needs-and-found)
 - **Discovery runs plugin code**: write the sentinel before entering an uncached bundle, clear it on success.
   A start and a Rescan read unchanged bundles from the saved `ScanCache` and enter only new and
   changed ones; nothing scans in between (the owner, 2026-10-09). A sandbox keeps no cache. Bump
@@ -158,6 +161,11 @@ The reasoning, history and measurements behind each rule are in [NOTES.md](NOTES
   *Project* and `saveproject` write it beside the exports, Load and `openproject` open it, `dump`
   names it; a save goes over it only when the player read it whole (`Place::refused`).
   [NOTES.md § Projects](NOTES.md#a-tutti-project-is-the-whole-setup)
+- **A preset file loads through the plugin's own loader** (`preset <file>`, `fx preset <n> <file>`: CLAP
+  `preset-load`, as a DAW's browser loads one); the player reads nothing of it, and a refusal carries the
+  plugin's reason (`HostPresetLoadImpl::on_error`). `loadseq` takes a saved sequence's name or any
+  `.mid` or `.seq.json` by its path. Both are what newdawn-workspace's platform check drives.
+  [NOTES.md § Platform check](NOTES.md#what-the-platform-check-needs-and-found)
 - **`.mid` is interchange, `.seq.json` fixtures**: refuse with a reason, name what is lost; a save name cannot leave the exports folder
   (`sequence::safe_stem`); run
   `tests/midi-conformance/verify.py` when the writer changes. Files are written by `mxm-audio-file`; the

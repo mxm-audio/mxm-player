@@ -820,6 +820,15 @@ impl PlayerApp {
                     .load_state(&path, &mut self.params)
                     .map(|()| "state dump loaded".to_owned())
             }
+            // **A preset file, through the plugin's own loader** (CLAP `preset-load`), as a DAW's
+            // browser loads one: the player reads nothing of the file, and the values it sets come
+            // back as the plugin's own edits. The rest of the line is the path, spaces and all.
+            ("preset", words) if !words.is_empty() => {
+                let path = PathBuf::from(words.join(" "));
+                self.engine.load_preset(&path)?;
+                self.requery_params = true;
+                Ok(format!("loaded the preset {}", path.display()))
+            }
             // **The chain's acts.** `fx add` takes an id or a name the way `load` does, from what
             // the scan found effect-capable; the rest address an effect by its position in the
             // chain, one-based, as the strips are numbered. Dump/load are the generic developer
@@ -883,6 +892,16 @@ impl PlayerApp {
                     path.display()
                 ))
             }
+            ("fx", ["preset", n, words @ ..]) if !words.is_empty() => {
+                let index = self.cli_fx_index(n)?;
+                let path = PathBuf::from(words.join(" "));
+                self.engine.load_fx_preset(index, &path)?;
+                Ok(format!(
+                    "effect {} loaded the preset {}",
+                    index + 1,
+                    path.display()
+                ))
+            }
             ("fx", ["loadstate", n]) => {
                 let index = self.cli_fx_index(n)?;
                 let path = self
@@ -894,7 +913,7 @@ impl PlayerApp {
             }
             ("fx", _) => Err(
                 "fx takes `add <plugin>`, `remove <n>`, `move <from> <to>`, `on <n>`, `off <n>`, \
-                 `editor <n>`, `dumpstate <n>` or `loadstate <n>`"
+                 `editor <n>`, `preset <n> <file>`, `dumpstate <n>` or `loadstate <n>`"
                     .to_owned(),
             ),
             ("export", [name]) => self
@@ -982,10 +1001,26 @@ impl PlayerApp {
                     format!("bend {a}")
                 })
                 .ok_or_else(|| "bend takes -1.0..=1.0".to_owned()),
-            ("loadseq", [name]) => {
-                let path = self.sequence_dir().join(format!("{name}.seq.json"));
-                self.load_sequence(&path)
-                    .map(|()| format!("loaded {}", path.display()))
+            // A saved sequence by its name, or a file anywhere by its path: a `.mid` through the
+            // step grid, as Load reads one, or a `.seq.json` exactly. The rest of the line is the
+            // name or the path, spaces and all.
+            ("loadseq", words) if !words.is_empty() => {
+                let wanted = words.join(" ");
+                let given = Path::new(&wanted);
+                let path = if given.extension().is_some() || given.components().count() > 1 {
+                    given.to_path_buf()
+                } else {
+                    self.sequence_dir().join(format!("{wanted}.seq.json"))
+                };
+                if path
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("mid"))
+                {
+                    self.load_midi(&path)?;
+                } else {
+                    self.load_sequence(&path)?;
+                }
+                Ok(format!("loaded {}", path.display()))
             }
             // The two collapsible panels, separately addressable — they collapse independently.
             ("panel", [which, state]) => {
@@ -1039,11 +1074,13 @@ impl PlayerApp {
                  loop <bar|pattern|all> | dumpstate | loadstate | \
                  octave <n> | panel <settings|parameters> <open|closed> | \
                  theme <light|dark|system> | panic | rescan | \
-                 sustain <on|off> | normalise <on|off> | bend <amount> | loadseq <name> | \
+                 sustain <on|off> | normalise <on|off> | bend <amount> | loadseq <name|file> | \
                  cc <controller> <value> | export <name> | save <name> | savemid <name> | \
                  saveproject <name> | openproject <name|folder> | \
+                 preset <file> | \
                  fx add <plugin> | fx remove <n> | fx move <from> <to> | fx on <n> | \
-                 fx off <n> | fx editor <n> | fx dumpstate <n> | fx loadstate <n>"
+                 fx off <n> | fx editor <n> | fx preset <n> <file> | fx dumpstate <n> | \
+                 fx loadstate <n>"
                     .to_owned(),
             ),
         }

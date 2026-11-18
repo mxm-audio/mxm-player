@@ -18,12 +18,15 @@ use clack_extensions::note_ports::{
 use clack_extensions::params::{
     HostParams, HostParamsImplMainThread, HostParamsImplShared, ParamClearFlags, ParamRescanFlags,
 };
+use clack_extensions::preset_discovery::preset_data::Location;
+use clack_extensions::preset_discovery::{HostPresetLoad, HostPresetLoadImpl};
 use clack_extensions::state::{HostState, HostStateImpl};
 use clack_extensions::tail::{HostTail, HostTailImpl};
 use clack_host::prelude::*;
 use log::LogSink;
-use std::sync::Arc;
+use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 /// Identity the player presents to plugins.
 pub fn host_info() -> HostInfo {
@@ -54,7 +57,8 @@ impl HostHandlers for MxmHost {
             .register::<HostState>()
             .register::<HostLatency>()
             .register::<HostTail>()
-            .register::<HostGui>();
+            .register::<HostGui>()
+            .register::<HostPresetLoad>();
     }
 }
 
@@ -166,6 +170,10 @@ pub struct PlayerHostState {
     /// is exactly what is wanted. One atomic store on the audio thread — wait-free and
     /// allocation-free, the discipline `set_midi_sounding` and the playhead already follow.
     unsettled_params: AtomicBool,
+    /// What the plugin said when it refused the preset file the host asked it to load
+    /// (`preset-load`'s `on_error`). Written and read on the main thread, during and right after
+    /// the load the host is waiting on, so a lock costs nothing here.
+    preset_refusal: Mutex<Option<String>>,
 }
 
 /// The handler clack hands to plugin threads: a thin `Arc` handle onto [`PlayerHostState`].
@@ -203,7 +211,16 @@ impl PlayerHostState {
             midi_pressed: [AtomicU64::new(0), AtomicU64::new(0)],
             sequencer_ack: AtomicU64::new(0),
             unsettled_params: AtomicBool::new(false),
+            preset_refusal: Mutex::new(None),
         }
+    }
+
+    /// Takes what the plugin last said in refusing a preset file, if it said anything.
+    pub fn take_preset_refusal(&self) -> Option<String> {
+        self.preset_refusal
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 
     /// Records that something happened the GUI should look at. Stores an atomic and nothing else.
@@ -536,6 +553,30 @@ impl HostStateImpl for HostMainThread<'_> {
             .store(true, Ordering::Release);
         self.shared.wake();
     }
+}
+
+/// `preset-load`'s host half: a refusal's reason is kept for the verb that asked, so it reaches
+/// whoever loaded the file; a load that worked needs nothing, the parameters it set arrive as the
+/// plugin's own edits.
+impl HostPresetLoadImpl for HostMainThread<'_> {
+    fn on_error(
+        &mut self,
+        _location: Location,
+        _load_key: Option<&CStr>,
+        _os_error: i32,
+        message: Option<&CStr>,
+    ) {
+        let reason = message
+            .map(|m| m.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "the plugin gave no reason".to_owned());
+        *self
+            .shared
+            .preset_refusal
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(reason);
+    }
+
+    fn loaded(&mut self, _location: Location, _load_key: Option<&CStr>) {}
 }
 
 impl HostLatencyImpl for HostMainThread<'_> {

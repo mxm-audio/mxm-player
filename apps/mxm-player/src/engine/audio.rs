@@ -95,12 +95,24 @@ impl CpalBackend {
                 .host
                 .default_output_device()
                 .ok_or_else(|| "no default audio output device".to_owned()),
-            Some(name) => self
+            // **The default device by its name first.** `devices` lists it first, so it is the
+            // name a fresh player picks, but ALSA's default is a virtual device its enumeration
+            // need not list: on a fresh Ubuntu 24.04 cpal names it "Default Audio Device" and lists
+            // no device by that name, and the player opened no audio at all (the platform check,
+            // 2026-11-18).
+            Some(name) => match self
                 .host
-                .output_devices()
-                .map_err(|e| describe(&e))?
-                .find(|d| d.to_string() == name)
-                .ok_or_else(|| format!("no audio output device named `{name}`")),
+                .default_output_device()
+                .filter(|d| d.to_string() == name)
+            {
+                Some(default) => Ok(default),
+                None => self
+                    .host
+                    .output_devices()
+                    .map_err(|e| describe(&e))?
+                    .find(|d| d.to_string() == name)
+                    .ok_or_else(|| format!("no audio output device named `{name}`")),
+            },
         }
     }
 }

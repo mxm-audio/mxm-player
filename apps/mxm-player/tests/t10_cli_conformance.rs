@@ -888,6 +888,10 @@ fn the_vocabulary_and_the_coverage_table_agree() {
         ("normalise", "covered as the Normalise row"),
         ("bend", "covered as the Bend row"),
         ("loadseq", "covered as the Load row"),
+        (
+            "preset",
+            "t9::a_preset_file_loads_through_the_plugins_own_loader",
+        ),
         ("savemid", "covered as the Name row"),
     ];
     let missing: Vec<&String> = vocab
@@ -932,6 +936,8 @@ fn every_guard_answers_with_a_usable_error() {
         ("fx remove 9", "the chain is empty"),
         ("fx add nothing-here", "no effect matches"),
         ("fx sideways", "fx takes"),
+        ("fx preset 9 nothing.json", "the chain is empty"),
+        ("preset", "commands:"),
     ] {
         let answer = command(&mut app, &settings, cmd);
         assert!(
